@@ -257,6 +257,7 @@ class CodeDirectoryBlob(Blob):
                     raise Exception(
                         f"CodeResources Hash mismatch. Expected {self.res_dir_hash.hex()}, Calculated {this_hash.hex()}"
                     )
+        # Info.plist hash
         if self.info_hash is not None:
             info_file_path = os.path.join(content_dir, "Info.plist")
             with open(info_file_path, "rb") as f:
@@ -267,6 +268,14 @@ class CodeDirectoryBlob(Blob):
                     raise Exception(
                         f"Info.plist Hash mismatch. Expected {self.info_hash.hex()}, Calculated {this_hash.hex()}"
                     )
+        # Requirements hash
+        if self.reqs_hash is not None:
+            if reqs_slot not in special_hashes:
+                raise Exception("Was not able to compute a requirements hash")
+            if special_hashes[reqs_slot] != self.reqs_hash:
+                raise Exception(
+                    f"Requirements hash mismatch. Expected {self.reqs_hash}, Calculated {special_hashes[reqs_slot]}"
+                )
 
 
 class SignatureBlob(Blob):
@@ -344,6 +353,11 @@ class RequirementsBlob(Blob):
         s.seek(-8, SEEK_CUR)
         self.blob_data = s.read(self.length)
 
+    def get_hash(self, hash_name: str) -> bytes:
+        h = hashlib.new(hash_name)
+        h.update(self.blob_data)
+        return h.digest()
+
 
 class EmbeddedSignatureBlob(Blob):
     def __init__(self, filename: str):
@@ -394,7 +408,13 @@ class EmbeddedSignatureBlob(Blob):
             self.deserialize(f)
 
     def validate(self):
-        self.code_dir_blob.validate(self.filename, self.sig_offset, {})
+        special_slots = {
+            reqs_slot: self.reqs_blob.get_hash(
+                get_hash_name(self.code_dir_blob.hash_type)
+            )
+        }
+
+        self.code_dir_blob.validate(self.filename, self.sig_offset, special_slots)
 
 
 def verify(args):
