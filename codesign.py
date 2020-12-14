@@ -130,13 +130,13 @@ class CodeDirectoryBlob(Blob):
         if self.version >= self.supports_team_id:
             self.team_id_offset = struct.unpack(">I", s.read(4))[0]
         if self.version >= self.supports_code_limit_64:
-            self.code_limit_64 = struct.unpack(">I", s.read(4))[0]
+            self.code_limit_64 = struct.unpack(">Q", s.read(4))[0]
         if self.version >= self.supports_exec_segment:
             (
                 self.exec_seg_base,
                 self.exec_seg_limit,
                 self.exec_seg_flags,
-            ) = struct.unpack(">3I", s.read(12))
+            ) = struct.unpack(">3Q", s.read(12))
         if self.version >= self.supports_pre_encrypt:
             self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", s.read(8))
 
