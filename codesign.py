@@ -446,18 +446,18 @@ def verify(args):
     sb.validate()
     print("Code signature is valid")
 
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Signs and verifies MacOS code signatures")
 
-parser = argparse.ArgumentParser(description="Signs and verifies MacOS code signatures")
+    subparsers = parser.add_subparsers(help="Commands")
+    # work-around to make subparser required
+    subparsers.required = True
 
-subparsers = parser.add_subparsers(help="Commands")
-# work-around to make subparser required
-subparsers.required = True
+    verify_subparser = subparsers.add_parser(
+        "verify", help="Verify the code signature for a binary"
+    )
+    verify_subparser.add_argument("filename", help="Path to the binary to verify")
+    verify_subparser.set_defaults(func=verify)
 
-verify_subparser = subparsers.add_parser(
-    "verify", help="Verify the code signature for a binary"
-)
-verify_subparser.add_argument("filename", help="Path to the binary to verify")
-verify_subparser.set_defaults(func=verify)
-
-args = parser.parse_args()
-args.func(args)
+    args = parser.parse_args()
+    args.func(args)
