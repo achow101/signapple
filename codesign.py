@@ -2,8 +2,10 @@
 
 import argparse
 import io
+import macholib.MachO
 import struct
 
+from macholib.mach_o import LC_CODE_SIGNATURE
 
 # Primary slot numbers
 # Found in both SuperBlob and as negative numbers in CodeDirectory hashes array
@@ -199,9 +201,9 @@ class CodeDirectoryBlob(Blob):
 
 
 class SuperBlob(Blob):
-    def __init__(self, entries: List[Tuple[int, int]]):
+    def __init__(self):
         super().__init__(0xFADE0CC0)
-        self.entry_index: List[Tuple[int, int]] = entries
+        self.entry_index: Optional(List[Tuple[int, int]]) = None
 
     def deserialize(self, s: io.IOBase):
         super.deserialize(s)
@@ -223,13 +225,33 @@ class SuperBlob(Blob):
                 pass
 
 
+def verify(args):
+    # Open the Mach-O binary and find the LC_CODE_SIGNATURE section
+    m = macholib.MachO.MachO(args.filename)
+    h = m.headers[0]
+
+    sigmeta = [cmd for cmd in h.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
+    sigmeta = sigmeta[0]
+
+    # Open the binary, go the signature, and parse it
+    with open(args.filename, "rb") as f:
+        f.seek(sigmeta[1].dataoff)
+
+        super_blob = SuperBlob()
+        super_blob.deserialize(f)
+
+
 parser = argparse.ArgumentParser(description="Signs and verifies MacOS code signatures")
 
 subparsers = parser.add_subparsers(help="Commands")
+# work-around to make subparser required
+subparsers.required = True
 
-verify_subparser = subparsers.add_subparser(
+verify_subparser = subparsers.add_parser(
     "verify", help="Verify the code signature for a binary"
 )
 verify_subparser.add_argument("filename", help="Path to the binary to verify")
+verify_subparser.set_defaults(func=verify)
 
 args = parser.parse_args()
+args.func(args)
