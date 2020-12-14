@@ -225,7 +225,7 @@ class CodeDirectoryBlob(Blob):
 
     def validate(
         self, filename: str, code_limit: int, special_hashes: Mapping[int, str]
-    ) -> bool:
+    ) -> None:
         # Code hashes
         page_size = 2 ** self.page_size
         hash_name = get_hash_name(self.hash_type)
@@ -240,7 +240,7 @@ class CodeDirectoryBlob(Blob):
                 this_hash = h.digest()
                 if slot_hash != this_hash:
                     raise Exception(
-                        f"Hash mismatch {slot_hash.hex()} {this_hash.hex()}"
+                        f"Code slot hash mismatch. Expected {slot_hash.hex()}, Calculated {this_hash.hex()}"
                     )
 
         # CodeResources hash
@@ -255,7 +255,7 @@ class CodeDirectoryBlob(Blob):
                 this_hash = h.digest()
                 if self.res_dir_hash != this_hash:
                     raise Exception(
-                        f"Hash mismatch {self.res_dir_hash.hex()} {this_hash.hex()}"
+                        f"CodeResources Hash mismatch. Expected {self.res_dir_hash.hex()}, Calculated {this_hash.hex()}"
                     )
         if self.info_hash is not None:
             info_file_path = os.path.join(content_dir, "Info.plist")
@@ -265,7 +265,7 @@ class CodeDirectoryBlob(Blob):
                 this_hash = h.digest()
                 if self.info_hash != this_hash:
                     raise Exception(
-                        f"Hash mismatch {self.info_hash.hex()} {this_hash.hex()}"
+                        f"Info.plist Hash mismatch. Expected {self.info_hash.hex()}, Calculated {this_hash.hex()}"
                     )
 
 
@@ -308,7 +308,7 @@ class SignatureBlob(Blob):
         self.signed_attrs = signer_info["signed_attrs"]
         self.sig = signer_info["signature"].contents
 
-    def validate(self, code_dir_hash: bytes) -> bool:
+    def validate(self, code_dir_hash: bytes) -> None:
         # Check the hash of CodeDirectory matches what is in the signature
         message_digest = None
         for attr in self.signed_attrs:
@@ -316,7 +316,7 @@ class SignatureBlob(Blob):
                 message_digest = attr["values"][0].native
                 if message_digest != code_dir_hash:
                     raise Exception(
-                        "Hash mismatch. Code directory does not match. Calculated {code_dir_hash}, expected {digest}"
+                        "CodeDirectory Hash mismatch. Expected {message_digest}, Calculated {code_dir_hash}"
                     )
         if message_digest is None:
             raise Exception("message_digest not found in signature")
