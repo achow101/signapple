@@ -7,6 +7,8 @@ import macholib.MachO
 import os
 import struct
 
+from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes
+from asn1crypto.x509 import Certificate
 from io import SEEK_CUR
 from macholib.mach_o import LC_CODE_SIGNATURE
 from typing import Mapping
@@ -155,8 +157,6 @@ class CodeDirectoryBlob(Blob):
         if self.version >= self.supports_pre_encrypt:
             self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", s.read(16))
 
-        print(hex(self.version))
-
         # Because I don't know what to do with some of these fields, if we see them being used, throw an error
         # if (
         #    any([
@@ -269,6 +269,65 @@ class CodeDirectoryBlob(Blob):
                     )
 
 
+class SignatureBlob(Blob):
+    """
+    Blob is actually BlobWrapper with the data being a CMS signature
+    """
+
+    def __init__(self):
+        super().__init__(0xFADE0B01)
+        self.cms_data: Optional[bytes] = None
+        self.cert_chain: List[Certificate] = []
+        self.signed_attr: Optional[CMSAttributes] = None
+        self.digest_alg: Optional[str] = None
+        self.sig_alg: Optioanl[str] = None
+        self.sig: Optiona[bytes] = None
+
+    def deserialize(self, s: io.IOBase):
+        super().deserialize(s)
+        to_read = self.length - 8
+        self.cms_data = s.read(to_read)
+
+        content = ContentInfo.load(self.cms_data)
+        signed_data = content["content"]
+        assert isinstance(signed_data, SignedData)
+        assert len(signed_data["signer_infos"]) == 1
+
+        # Parse certificates
+        for cert in signed_data["certificates"]:
+            c = cert.chosen
+            assert isinstance(c, Certificate)
+            self.cert_chain.append(c)
+
+        # Parse algorithms used
+        signer_info = signed_data["signer_infos"][0]
+        self.digest_alg = signer_info["digest_algorithm"]["algorithm"].native
+        self.sig_alg = signer_info["signature_algorithm"]["algorithm"].native
+
+        # Parse message and signature
+        self.signed_attrs = signer_info["signed_attrs"]
+        self.sig = signer_info["signature"].contents
+
+    def validate(self, code_dir_hash: bytes) -> bool:
+        # Check the hash of CodeDirectory matches what is in the signature
+        message_digest = None
+        for attr in self.signed_attrs:
+            if attr["type"].native == "message_digest":
+                message_digest = attr["values"][0].native
+                if message_digest != code_dir_hash:
+                    raise Exception(
+                        "Hash mismatch. Code directory does not match. Calculated {code_dir_hash}, expected {digest}"
+                    )
+        if message_digest is None:
+            raise Exception("message_digest not found in signature")
+
+        # Check the signature
+        pubkey = asymmetric.load_public_key(self.cert_chain[-1].public_key)
+        asymmetric.rsa_pkcs1v15_verify(
+            pubkey, self.sig, self.signed_attrs.dump(), self.digest_alg
+        )
+
+
 class RequirementsBlob(Blob):
     """
     We treat these blobs as black boxes. Apple's csreq tool will create these for us.
@@ -291,6 +350,8 @@ class EmbeddedSignatureBlob(Blob):
         super().__init__(0xFADE0CC0)
         self.entry_index: List[Tuple[int, int]] = []
         self.code_dir_blob: Optional[CodeDirectoryBlob] = None
+        self.reqs_blob: Optional[RequirementsBlob] = None
+        self.sig_blob: Optional[SignatureBlob] = None
 
         self.filename: str = filename
 
@@ -318,7 +379,8 @@ class EmbeddedSignatureBlob(Blob):
                 self.code_dir_blob = CodeDirectoryBlob()
                 self.code_dir_blob.deserialize(s)
             elif entry_type == sig_slot:
-                pass
+                self.sig_blob = SignatureBlob()
+                self.sig_blob.deserialize(s)
             elif entry_type == reqs_slot:
                 self.reqs_blob = RequirementsBlob()
                 self.reqs_blob.deserialize(s)
