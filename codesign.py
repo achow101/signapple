@@ -246,7 +246,9 @@ class CodeDirectoryBlob(Blob):
         # CodeResources hash
         content_dir = os.path.split(os.path.split(os.path.abspath(filename))[0])[0]
         if self.res_dir_hash is not None:
-            code_res_file_path = os.path.join(content_dir, "_CodeSignature", "CodeResources")
+            code_res_file_path = os.path.join(
+                content_dir, "_CodeSignature", "CodeResources"
+            )
             with open(code_res_file_path, "rb") as f:
                 h = hashlib.new(hash_name)
                 h.update(f.read())
@@ -265,6 +267,23 @@ class CodeDirectoryBlob(Blob):
                     raise Exception(
                         f"Hash mismatch {self.info_hash.hex()} {this_hash.hex()}"
                     )
+
+
+class RequirementsBlob(Blob):
+    """
+    We treat these blobs as black boxes. Apple's csreq tool will create these for us.
+    These are SuperBlobs, but we don't really care and just need to put them in the correct
+    place in an EmbeddedSignatureBlob.
+    """
+
+    def __init__(self):
+        super().__init__(0xFADE0C01)
+        self.blob_data: Optional[bytes] = None
+
+    def deserialize(self, s: io.IOBase):
+        super().deserialize(s)
+        s.seek(-8, SEEK_CUR)
+        self.blob_data = s.read(self.length)
 
 
 class EmbeddedSignatureBlob(Blob):
@@ -301,7 +320,8 @@ class EmbeddedSignatureBlob(Blob):
             elif entry_type == sig_slot:
                 pass
             elif entry_type == reqs_slot:
-                pass
+                self.reqs_blob = RequirementsBlob()
+                self.reqs_blob.deserialize(s)
 
             s.seek(orig_pos)
 
