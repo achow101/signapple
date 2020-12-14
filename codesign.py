@@ -35,7 +35,7 @@ def read_string(s: io.IOBase) -> bytes:
         b = s.read(1)
         if b == b"\x00":
             break
-        string.append(b)
+        string += b
     return string
 
 
@@ -119,54 +119,55 @@ class CodeDirectoryBlob(Blob):
             self.platform,
             self.page_size,
             self.spare2,
-        ) = struct.unpack(">IIIIIIIBBBBI", s.read(36))
+        ) = struct.unpack(">7I4BI", s.read(36))
 
-        if self.version < earliset_version:
+        if self.version < self.earliest_version:
             raise Exception("CodeDirectory too old")
 
         # Read version specific fields
-
-        if self.version >= supports_scatter:
-            self.scatter_offset = struct.unpack(s.read(4))
-        if self.version >= supports_team_id:
-            self.team_id_offset = struct.unpack(s.read(4))
-        if self.version >= supports_code_limit_64:
-            self.code_limit_64 = struct.unpack(s.read(4))
-        if self.version >= suports_exec_segment:
+        if self.version >= self.supports_scatter:
+            self.scatter_offset = struct.unpack(">I", s.read(4))[0]
+        if self.version >= self.supports_team_id:
+            self.team_id_offset = struct.unpack(">I", s.read(4))[0]
+        if self.version >= self.supports_code_limit_64:
+            self.code_limit_64 = struct.unpack(">I", s.read(4))[0]
+        if self.version >= self.supports_exec_segment:
             (
                 self.exec_seg_base,
                 self.exec_seg_limit,
                 self.exec_seg_flags,
-            ) = struct.unpack(s.read(12))
-        if self.version >= supports_pre_encrypt:
-            self.runtime, self.pre_encrypt_offset = struct.unpack(s.read(8))
+            ) = struct.unpack(">3I", s.read(12))
+        if self.version >= self.supports_pre_encrypt:
+            self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", s.read(8))
+
+        print(hex(self.version))
 
         # Because I don't know what to do with some of these fields, if we see them being used, throw an error
-        if (
-            any(
-                self.scatter_offset,
-                self.code_limit_64,
-                self.exec_seg_base,
-                self.exec_seg_base,
-                self.exec_seg_limit,
-                self.exec_seg_flags,
-                self.runtime,
-                self.pre_encrypt_hash,
-            )
-            is not None
-            or any(
-                self.scatter_offset,
-                self.code_limit_64,
-                self.exec_seg_base,
-                self.exec_seg_base,
-                self.exec_seg_limit,
-                self.exec_seg_flags,
-                self.runtime,
-                self.pre_encrypt_hash,
-            )
-            > 0
-        ):
-            raise Exception("Unsupported feature in use")
+        # if (
+        #    any([
+        #        self.scatter_offset,
+        #        self.code_limit_64,
+        #        self.exec_seg_base,
+        #        self.exec_seg_base,
+        #        self.exec_seg_limit,
+        #        self.exec_seg_flags,
+        #        self.runtime,
+        #        self.pre_encrypt_offset,
+        #        ])
+        #    is not None
+        #    and any([
+        #        self.scatter_offset,
+        #        self.code_limit_64,
+        #        self.exec_seg_base,
+        #        self.exec_seg_base,
+        #        self.exec_seg_limit,
+        #        self.exec_seg_flags,
+        #        self.runtime,
+        #        self.pre_encrypt_offset,
+        #        ])
+        #    > 0
+        #):
+        #    raise Exception("Unsupported feature in use")
 
         # Read code slot hashes
         self.seek(s, self.hash_offset)
@@ -211,12 +212,12 @@ class CodeDirectoryBlob(Blob):
 class SuperBlob(Blob):
     def __init__(self):
         super().__init__(0xFADE0CC0)
-        self.entry_index: Optional(List[Tuple[int, int]]) = None
+        self.entry_index: List[Tuple[int, int]] = []
 
     def deserialize(self, s: io.IOBase):
-        super.deserialize(s)
+        super().deserialize(s)
 
-        count = struct.unpack(">I", s.read(4))
+        count, = struct.unpack(">I", s.read(4))
         for i in range(count):
             entry_type, offset = struct.unpack(">II", s.read(8))
             self.entry_index.append((entry_type, offset))
@@ -225,12 +226,21 @@ class SuperBlob(Blob):
             orig_pos = s.tell()
             self.seek(s, offset)
 
+            cls = None
             if entry_type == code_dir_slot:
-                pass
+                cls = CodeDirectoryBlob
             elif entry_type == sig_slot:
                 pass
             elif entry_type == reqs_slot:
                 pass
+
+            if cls is None:
+                raise Exception("Unknown blob type, cannot deserialize")
+
+            o = cls()
+            o.deserialize(s)
+
+            s.seek(orig_pos)
 
 
 def verify(args):
