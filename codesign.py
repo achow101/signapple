@@ -241,7 +241,7 @@ class CodeDirectoryBlob(Blob):
             self.team_id = read_string(s)
 
     def validate(
-        self, filename: str, code_limit: int, special_hashes: Mapping[int, str]
+        self, filename: str, special_hashes: Mapping[int, str]
     ) -> None:
         # Code hashes
         page_size = 2 ** self.page_size
@@ -249,8 +249,8 @@ class CodeDirectoryBlob(Blob):
         with open(filename, "rb") as f:
             for slot_hash in self.code_hashes:
                 to_read = page_size
-                if f.tell() + page_size >= code_limit:
-                    to_read = code_limit - f.tell()
+                if f.tell() + page_size >= self.code_limit:
+                    to_read = self.code_limit - f.tell()
 
                 h = hashlib.new(hash_name)
                 h.update(f.read(to_read))
@@ -436,7 +436,7 @@ class EmbeddedSignatureBlob(Blob):
             )
         }
 
-        self.code_dir_blob.validate(self.filename, self.sig_offset, special_slots)
+        self.code_dir_blob.validate(self.filename, special_slots)
         self.sig_blob.validate(self.code_dir_blob.get_hash())
 
 
