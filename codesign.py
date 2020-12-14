@@ -5,6 +5,7 @@ import io
 import macholib.MachO
 import struct
 
+from io import SEEK_CUR
 from macholib.mach_o import LC_CODE_SIGNATURE
 
 # Primary slot numbers
@@ -42,9 +43,17 @@ class Blob(object):
     def __init__(self, magic: int):
         self.magic: int = magic
         self.length: Optional[int] = None
+        self.blob_offset: int = 0
 
     def deserialize(self, s: io.IOBase):
+        self.blob_offset = s.tell()
         self.magic, self.length = struct.unpack(">II", s.read(8))
+
+    def seek(self, s: io.IOBase, offset):
+        """
+        Seek to position in s at blob_offset + offset
+        """
+        s.seek(self.blob_offset + offset)
 
 
 class CodeDirectoryBlob(Blob):
@@ -160,19 +169,18 @@ class CodeDirectoryBlob(Blob):
             raise Exception("Unsupported feature in use")
 
         # Read code slot hashes
-        s.seek(self.hash_offset)
+        self.seek(s, self.hash_offset)
         for i in range(self.count_code):
             self.code_hashes.append(s.read(self.hash_size))
 
         # Read special slot hashes
         # These are "negative indexes" from hash_offset
         self.special_hashes: List[bytes] = []
-        s.seek(self.hash_offset)
+        self.seek(s, self.hash_offset)
         for i in range(self.count_special):
-            hash_begin = s.tell() - self.hash_size
-            s.seek(hash_begin)
+            s.seek(-self.hash_size, SEEK_CUR)
             this_hash = s.read(self.hash_size)
-            s.seek(hash_begin)
+            s.seek(-self.hash_size, SEEK_CUR)
 
             slot_num = i + 1
 
@@ -193,10 +201,10 @@ class CodeDirectoryBlob(Blob):
                 self.ent_der_hash = this_hash
 
         # ID and team ID
-        s.seek(self.ident_offset)
+        self.seek(s, self.ident_offset)
         self.ident = read_string(s)
         if self.team_id_offset is not None or self.team_id_offset > 0:
-            s.seek(self.team_id_offset)
+            self.seek(s, self.team_id_offset)
             self.team_id = read_string(s)
 
 
@@ -215,7 +223,7 @@ class SuperBlob(Blob):
 
             # Deserialize the entries at their offsets
             orig_pos = s.tell()
-            s.seek(offset)
+            self.seek(s, offset)
 
             if entry_type == code_dir_slot:
                 pass
