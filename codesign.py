@@ -11,6 +11,7 @@ from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes
 from asn1crypto.x509 import Certificate
 from io import SEEK_CUR
 from macholib.mach_o import LC_CODE_SIGNATURE
+from oscrypto import asymmetric
 from typing import Mapping
 
 # Primary slot numbers
@@ -56,6 +57,17 @@ def get_hash_name(t: int) -> str:
     raise Exception("No or unknown hash type")
 
 
+def sort_attributes(attrs_in: CMSAttributes) -> CMSAttributes:
+    """
+    Sort the authenticated attributes for signing by re-encoding them, asn1crypto
+    takes care of the actual sorting of the set.
+    """
+    attrs_out = CMSAttributes()
+    for attrval in attrs_in:
+        attrs_out.append(attrval)
+    return attrs_out
+
+
 class Blob(object):
     def __init__(self, magic: int):
         self.magic: int = magic
@@ -84,6 +96,8 @@ class CodeDirectoryBlob(Blob):
 
     def __init__(self):
         super().__init__(0xFADE0C02)
+
+        self.blob_data: Optional[Bytes] = None
 
         self.code_hashes: List[bytes] = []
 
@@ -121,6 +135,9 @@ class CodeDirectoryBlob(Blob):
 
     def deserialize(self, s: io.IOBase):
         super().deserialize(s)
+        s.seek(-8, SEEK_CUR)
+        self.blob_data = s.read(self.length)
+        s.seek(8 - self.length, SEEK_CUR)
 
         # Read common header
         (
@@ -277,6 +294,12 @@ class CodeDirectoryBlob(Blob):
                     f"Requirements hash mismatch. Expected {self.reqs_hash}, Calculated {special_hashes[reqs_slot]}"
                 )
 
+    def get_hash(self) -> bytes:
+        hash_name = get_hash_name(self.hash_type)
+        h = hashlib.new(hash_name)
+        h.update(self.blob_data)
+        return h.digest()
+
 
 class SignatureBlob(Blob):
     """
@@ -332,9 +355,8 @@ class SignatureBlob(Blob):
 
         # Check the signature
         pubkey = asymmetric.load_public_key(self.cert_chain[-1].public_key)
-        asymmetric.rsa_pkcs1v15_verify(
-            pubkey, self.sig, self.signed_attrs.dump(), self.digest_alg
-        )
+        signed_msg = sort_attributes(self.signed_attrs).dump()
+        asymmetric.rsa_pkcs1v15_verify(pubkey, self.sig, signed_msg, self.digest_alg)
 
 
 class RequirementsBlob(Blob):
@@ -415,12 +437,14 @@ class EmbeddedSignatureBlob(Blob):
         }
 
         self.code_dir_blob.validate(self.filename, self.sig_offset, special_slots)
+        self.sig_blob.validate(self.code_dir_blob.get_hash())
 
 
 def verify(args):
     sb = EmbeddedSignatureBlob(args.filename)
     sb.deserialize_from_file()
     sb.validate()
+    print("Code signature is valid")
 
 
 parser = argparse.ArgumentParser(description="Signs and verifies MacOS code signatures")
