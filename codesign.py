@@ -1,12 +1,14 @@
 #! /usr/bin/env python3
 
 import argparse
+import hashlib
 import io
 import macholib.MachO
 import struct
 
 from io import SEEK_CUR
 from macholib.mach_o import LC_CODE_SIGNATURE
+from typing import Mapping
 
 # Primary slot numbers
 # Found in both SuperBlob and as negative numbers in CodeDirectory hashes array
@@ -37,6 +39,18 @@ def read_string(s: io.IOBase) -> bytes:
             break
         string += b
     return string
+
+
+def get_hash_name(t: int) -> str:
+    if t == 1:
+        return "sha1"
+    elif t == 2 or t == 3:
+        return "sha256"
+    elif t == 4:
+        return "sha384"
+    elif t == 5:
+        return "sha512"
+    raise Exception("No or unknown hash type")
 
 
 class Blob(object):
@@ -130,15 +144,15 @@ class CodeDirectoryBlob(Blob):
         if self.version >= self.supports_team_id:
             self.team_id_offset = struct.unpack(">I", s.read(4))[0]
         if self.version >= self.supports_code_limit_64:
-            self.code_limit_64 = struct.unpack(">Q", s.read(4))[0]
+            self.code_limit_64 = struct.unpack(">Q", s.read(8))[0]
         if self.version >= self.supports_exec_segment:
             (
                 self.exec_seg_base,
                 self.exec_seg_limit,
                 self.exec_seg_flags,
-            ) = struct.unpack(">3Q", s.read(12))
+            ) = struct.unpack(">3Q", s.read(24))
         if self.version >= self.supports_pre_encrypt:
-            self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", s.read(8))
+            self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", s.read(16))
 
         print(hex(self.version))
 
@@ -166,7 +180,7 @@ class CodeDirectoryBlob(Blob):
         #        self.pre_encrypt_offset,
         #        ])
         #    > 0
-        #):
+        # ):
         #    raise Exception("Unsupported feature in use")
 
         # Read code slot hashes
@@ -208,16 +222,47 @@ class CodeDirectoryBlob(Blob):
             self.seek(s, self.team_id_offset)
             self.team_id = read_string(s)
 
+    def validate(
+        self, filename: str, code_limit: int, special_hashes: Mapping[int, str]
+    ) -> bool:
+        page_size = 2 ** self.page_size
+        hash_name = get_hash_name(self.hash_type)
+        with open(filename, "rb") as f:
+            for slot_hash in self.code_hashes:
+                to_read = page_size
+                if f.tell() + page_size >= code_limit:
+                    to_read = code_limit - f.tell()
+
+                h = hashlib.new(hash_name)
+                h.update(f.read(to_read))
+                this_hash = h.digest()
+                print(f"{slot_hash.hex()} {this_hash.hex()}")
+                if slot_hash != this_hash:
+                    raise Exception(
+                        f"Hash mismatch {slot_hash.hex()} {this_hash.hex()}"
+                    )
+
 
 class SuperBlob(Blob):
-    def __init__(self):
+    def __init__(self, filename: str):
         super().__init__(0xFADE0CC0)
         self.entry_index: List[Tuple[int, int]] = []
+        self.code_dir_blob: Optional[CodeDirectoryBlob] = None
+
+        self.filename: str = filename
+
+        # Open the Mach-O binary and find the LC_CODE_SIGNATURE section
+        m = macholib.MachO.MachO(args.filename)
+        h = m.headers[0]
+
+        sigmeta = [cmd for cmd in h.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
+        sigmeta = sigmeta[0]
+        self.sig_offset = sigmeta[1].dataoff
 
     def deserialize(self, s: io.IOBase):
         super().deserialize(s)
 
-        count, = struct.unpack(">I", s.read(4))
+        (count,) = struct.unpack(">I", s.read(4))
         for i in range(count):
             entry_type, offset = struct.unpack(">II", s.read(8))
             self.entry_index.append((entry_type, offset))
@@ -226,37 +271,30 @@ class SuperBlob(Blob):
             orig_pos = s.tell()
             self.seek(s, offset)
 
-            cls = None
             if entry_type == code_dir_slot:
-                cls = CodeDirectoryBlob
+                self.code_dir_blob = CodeDirectoryBlob()
+                self.code_dir_blob.deserialize(s)
             elif entry_type == sig_slot:
                 pass
             elif entry_type == reqs_slot:
                 pass
 
-            if cls is None:
-                raise Exception("Unknown blob type, cannot deserialize")
-
-            o = cls()
-            o.deserialize(s)
-
             s.seek(orig_pos)
+
+    def deserialize_from_file(self):
+        # Open the binary, go the signature, and parse it
+        with open(args.filename, "rb") as f:
+            f.seek(self.sig_offset)
+            self.deserialize(f)
+
+    def validate(self):
+        self.code_dir_blob.validate(self.filename, self.sig_offset, {})
 
 
 def verify(args):
-    # Open the Mach-O binary and find the LC_CODE_SIGNATURE section
-    m = macholib.MachO.MachO(args.filename)
-    h = m.headers[0]
-
-    sigmeta = [cmd for cmd in h.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
-    sigmeta = sigmeta[0]
-
-    # Open the binary, go the signature, and parse it
-    with open(args.filename, "rb") as f:
-        f.seek(sigmeta[1].dataoff)
-
-        super_blob = SuperBlob()
-        super_blob.deserialize(f)
+    sb = SuperBlob(args.filename)
+    sb.deserialize_from_file()
+    sb.validate()
 
 
 parser = argparse.ArgumentParser(description="Signs and verifies MacOS code signatures")
