@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import io
 import macholib.MachO
+import os
 import struct
 
 from io import SEEK_CUR
@@ -225,6 +226,7 @@ class CodeDirectoryBlob(Blob):
     def validate(
         self, filename: str, code_limit: int, special_hashes: Mapping[int, str]
     ) -> bool:
+        # Code hashes
         page_size = 2 ** self.page_size
         hash_name = get_hash_name(self.hash_type)
         with open(filename, "rb") as f:
@@ -236,10 +238,32 @@ class CodeDirectoryBlob(Blob):
                 h = hashlib.new(hash_name)
                 h.update(f.read(to_read))
                 this_hash = h.digest()
-                print(f"{slot_hash.hex()} {this_hash.hex()}")
                 if slot_hash != this_hash:
                     raise Exception(
                         f"Hash mismatch {slot_hash.hex()} {this_hash.hex()}"
+                    )
+
+        # CodeResources hash
+        content_dir = os.path.split(os.path.split(os.path.abspath(filename))[0])[0]
+        if self.res_dir_hash is not None:
+            code_res_file_path = os.path.join(content_dir, "_CodeSignature", "CodeResources")
+            with open(code_res_file_path, "rb") as f:
+                h = hashlib.new(hash_name)
+                h.update(f.read())
+                this_hash = h.digest()
+                if self.res_dir_hash != this_hash:
+                    raise Exception(
+                        f"Hash mismatch {self.res_dir_hash.hex()} {this_hash.hex()}"
+                    )
+        if self.info_hash is not None:
+            info_file_path = os.path.join(content_dir, "Info.plist")
+            with open(info_file_path, "rb") as f:
+                h = hashlib.new(hash_name)
+                h.update(f.read())
+                this_hash = h.digest()
+                if self.info_hash != this_hash:
+                    raise Exception(
+                        f"Hash mismatch {self.info_hash.hex()} {this_hash.hex()}"
                     )
 
 
