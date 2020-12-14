@@ -449,9 +449,7 @@ def verify(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Signs and verifies MacOS code signatures")
 
-    subparsers = parser.add_subparsers(help="Commands", dest="command")
-    # work-around to make subparser required
-    subparsers.required = True
+    subparsers = parser.add_subparsers(help="Commands", dest="command", required=True)
 
     verify_subparser = subparsers.add_parser(
         "verify", help="Verify the code signature for a binary"
