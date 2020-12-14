@@ -76,7 +76,10 @@ class Blob(object):
 
     def deserialize(self, s: io.IOBase):
         self.blob_offset = s.tell()
-        self.magic, self.length = struct.unpack(">II", s.read(8))
+        magic, self.length = struct.unpack(">II", s.read(8))
+
+        if magic != self.magic:
+            raise Exception("Magic mismatch. Expected {hex(self.magic)}}, got {hex(magic)}")
 
     def seek(self, s: io.IOBase, offset):
         """
