@@ -12,7 +12,7 @@ from macholib.mach_o import LC_CODE_SIGNATURE
 from typing import Mapping
 
 # Primary slot numbers
-# Found in both SuperBlob and as negative numbers in CodeDirectory hashes array
+# Found in both EmbeddedSignatureBlob and as negative numbers in CodeDirectory hashes array
 info_slot = 1  # Info.plist
 reqs_slot = 2  # Internal requirements
 res_dir_slot = 3  # Resource directory
@@ -23,7 +23,7 @@ ent_der_slot = 7  # DER representation of entitlements
 
 
 # Virtual slot numbers
-# Found only in SuperBlob
+# Found only in EmbeddedSignatureBlob
 code_dir_slot = 0  # CodeDirectory
 alt_code_dir_slot = 0x1000  # Alternate CodeDirectory array
 alt_code_dir_limit = 0x1005
@@ -267,7 +267,7 @@ class CodeDirectoryBlob(Blob):
                     )
 
 
-class SuperBlob(Blob):
+class EmbeddedSignatureBlob(Blob):
     def __init__(self, filename: str):
         super().__init__(0xFADE0CC0)
         self.entry_index: List[Tuple[int, int]] = []
@@ -316,7 +316,7 @@ class SuperBlob(Blob):
 
 
 def verify(args):
-    sb = SuperBlob(args.filename)
+    sb = EmbeddedSignatureBlob(args.filename)
     sb.deserialize_from_file()
     sb.validate()
 
