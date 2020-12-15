@@ -3,18 +3,18 @@
 import argparse
 import hashlib
 import io
-import macholib.MachO
+import macholib.MachO # type: ignore
 import os
 import struct
 
-from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes
-from asn1crypto.x509 import Certificate
-from certvalidator.context import ValidationContext
-from certvalidator import CertificateValidator
+from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes # type: ignore
+from asn1crypto.x509 import Certificate # type: ignore
+from certvalidator.context import ValidationContext # type: ignore
+from certvalidator import CertificateValidator # type: ignore
 from io import SEEK_CUR
-from macholib.mach_o import LC_CODE_SIGNATURE
-from oscrypto import asymmetric
-from typing import Mapping
+from macholib.mach_o import LC_CODE_SIGNATURE # type: ignore
+from oscrypto import asymmetric # type: ignore
+from typing import List, Mapping, Optional, Tuple
 
 # Primary slot numbers
 # Found in both EmbeddedSignatureBlob and as negative numbers in CodeDirectory hashes array
@@ -23,7 +23,7 @@ reqs_slot = 2  # Internal requirements
 res_dir_slot = 3  # Resource directory
 top_dir_slot = 4  # Application specific slot
 ent_slot = 5  # Embedded entitlement configuration
-rep_specfic_slot = 6  # For use by disk rep
+rep_specific_slot = 6  # For use by disk rep
 ent_der_slot = 7  # DER representation of entitlements
 
 
@@ -39,10 +39,17 @@ ticket_slot = 0x10002  # Ticket embedded in signature (DMG only)
 APPLE_ROOT_CERT = b'0\x82\x04\xbb0\x82\x03\xa3\xa0\x03\x02\x01\x02\x02\x01\x020\r\x06\t*\x86H\x86\xf7\r\x01\x01\x05\x05\x000b1\x0b0\t\x06\x03U\x04\x06\x13\x02US1\x130\x11\x06\x03U\x04\n\x13\nApple Inc.1&0$\x06\x03U\x04\x0b\x13\x1dApple Certification Authority1\x160\x14\x06\x03U\x04\x03\x13\rApple Root CA0\x1e\x17\r060425214036Z\x17\r350209214036Z0b1\x0b0\t\x06\x03U\x04\x06\x13\x02US1\x130\x11\x06\x03U\x04\n\x13\nApple Inc.1&0$\x06\x03U\x04\x0b\x13\x1dApple Certification Authority1\x160\x14\x06\x03U\x04\x03\x13\rApple Root CA0\x82\x01"0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x01\x05\x00\x03\x82\x01\x0f\x000\x82\x01\n\x02\x82\x01\x01\x00\xe4\x91\xa9\t\x1f\x91\xdb\x1eGP\xeb\x05\xed^y\x84-\xeb6\xa2WLU\xec\x8b\x19\x89\xde\xf9Kl\xf5\x07\xab"0\x02\xe8\x18>\xf8P\t\xd3\x7fA\xa8\x98\xf9\xd1\xcaf\x9c$k\x11\xd0\xa3\xbb\xe4\x1b*\xc3\x1f\x95\x9ez\x0c\xa4G\x8b[\xd4\x1673\xcb\xc4\x0fM\xce\x14i\xd1\xc9\x19r\xf5]\x0e\xd5\x7f_\x9b\xf2%\x03\xbaU\x8fM]\r\xf1d5#\x15K\x15Y\x1d\xb3\x94\xf7\xf6\x9c\x9e\xcfP\xba\xc1XPg\x8f\x08\xb4 \xf7\xcb\xac, op\xb6?\x010\x8c\xb7C\xcf\x0f\x9d=\xf3+I(\x1a\xc8\xfe\xce\xb5\xb9\x0e\xd9^\x1c\xd6\xcb=\xb5:\xad\xf4\x0f\x0e\x00\x92\x0b\xb1!\x16.t\xd5<\r\xdbb\x16\xab\xa3q\x92GSU\xc1\xaf/A\xb3\xf8\xfb\xe3p\xcd\xe6\xa3LE~\x1fLkP\x96A\x89\xc4tb\x0b\x10\x83A\x873\x8a\x81\xb10X\xecZ\x042\x8ch\xb3\x8f\x1d\xdees\xffg^e\xbcI\xd8v\x9f3\x14e\xa1w\x94\xc9-\x02\x03\x01\x00\x01\xa3\x82\x01z0\x82\x01v0\x0e\x06\x03U\x1d\x0f\x01\x01\xff\x04\x04\x03\x02\x01\x060\x0f\x06\x03U\x1d\x13\x01\x01\xff\x04\x050\x03\x01\x01\xff0\x1d\x06\x03U\x1d\x0e\x04\x16\x04\x14+\xd0iG\x94v\t\xfe\xf4k\x8d.@\xa6\xf7GM\x7f\x08^0\x1f\x06\x03U\x1d#\x04\x180\x16\x80\x14+\xd0iG\x94v\t\xfe\xf4k\x8d.@\xa6\xf7GM\x7f\x08^0\x82\x01\x11\x06\x03U\x1d \x04\x82\x01\x080\x82\x01\x040\x82\x01\x00\x06\t*\x86H\x86\xf7cd\x05\x010\x81\xf20*\x06\x08+\x06\x01\x05\x05\x07\x02\x01\x16\x1ehttps://www.apple.com/appleca/0\x81\xc3\x06\x08+\x06\x01\x05\x05\x07\x02\x020\x81\xb6\x1a\x81\xb3Reliance on this certificate by any party assumes acceptance of the then applicable standard terms and conditions of use, certificate policy and certification practice statements.0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x05\x05\x00\x03\x82\x01\x01\x00\\6\x99L-x\xb7\xed\x8c\x9b\xdc\xf3w\x9b\xf2v\xd2w0O\xc1\x1f\x85\x83\x85\x1b\x99=G7\xf2\xa9\x9b@\x8e,\xd4\xb1\x90\x12\xd8\xbe\xf4s\x9b\xee\xd2d\x0f\xcbyO4\xd8\xa2>\xf9x\xffk\xc8\x07\xec}9\x83\x8bS \xd38\xc4\xb1\xbf\x9aO\nk\xff+\xfcY\xa7\x05\t|\x17@V\x11\x1et\xd3\xb7\x8b#;G\xa3\xd5o$\xe2\xeb\xd1\xb7p\xdf\x0fE\xe1\'\xca\xf1mx\xed\xe7\xb5\x17\x17\xa8\xdc~"5\xca%\xd5\xd9\x0f\xd6k\xd4\xa2$#\x11\xf7\xa1\xac\x8fs\x81`\xc6\x1b[\t/\x92\xb2\xf8DH\xf0`8\x9e\x15\xf5=&g \x8a3j\xf7\r\x82\xcf\xde\xeb\xa3/\xf9Sj[d\xc0c3w\xf7:\x07,V\xeb\xda\x0f!\x0e\xda\xbas\x19O\xb5\xd96\x7f\xc1\x87U\xd9\xa7\x99\xb92B\xfb\xd8\xd5q\x9e~\xa1R\xb7\x1b\xbd\x93B$\x12*\xc7\x0f\x1d\xb6M\x9c^c\xc8K\x80\x17P\xaa\x8a\xd5\xda\xe4\xfc\xd0\t\x077\xb0uu!'
 
 
-def read_string(s: io.IOBase) -> bytes:
+def sread(s: io.RawIOBase, n: int) -> bytes:
+    b = s.read(n)
+    if b is None:
+        b = b""
+    return b
+
+
+def read_string(s: io.RawIOBase) -> bytes:
     string = b""
     while True:
-        b = s.read(1)
+        b = sread(s, 1)
         if b == b"\x00":
             break
         string += b
@@ -78,16 +85,16 @@ class Blob(object):
         self.length: Optional[int] = None
         self.blob_offset: int = 0
 
-    def deserialize(self, s: io.IOBase):
+    def deserialize(self, s: io.RawIOBase):
         self.blob_offset = s.tell()
-        magic, self.length = struct.unpack(">II", s.read(8))
+        magic, self.length = struct.unpack(">II", sread(s, 8))
 
         if magic != self.magic:
             raise Exception(
                 "Magic mismatch. Expected {hex(self.magic)}}, got {hex(magic)}"
             )
 
-    def seek(self, s: io.IOBase, offset):
+    def seek(self, s: io.RawIOBase, offset):
         """
         Seek to position in s at blob_offset + offset
         """
@@ -121,7 +128,7 @@ class CodeDirectoryBlob(Blob):
         self.ident: Optional[bytes] = None
         self.team_id: Optional[bytes] = None
 
-        self.version: Optional[int] = None
+        self.version: int = 0
         self.flags: Optional[int] = None
         self.hash_offset: Optional[int] = None
         self.ident_offset: Optional[int] = None
@@ -142,10 +149,12 @@ class CodeDirectoryBlob(Blob):
         self.runtime: Optional[int] = None
         self.pre_encrypt_offset: Optional[int] = None
 
-    def deserialize(self, s: io.IOBase):
+    def deserialize(self, s: io.RawIOBase):
         super().deserialize(s)
+        assert(self.magic is not None)
+        assert(self.length is not None)
         s.seek(-8, SEEK_CUR)
-        self.blob_data = s.read(self.length)
+        self.blob_data = sread(s, self.length)
         s.seek(8 - self.length, SEEK_CUR)
 
         # Read common header
@@ -162,26 +171,26 @@ class CodeDirectoryBlob(Blob):
             self.platform,
             self.page_size,
             self.spare2,
-        ) = struct.unpack(">7I4BI", s.read(36))
+        ) = struct.unpack(">7I4BI", sread(s, 36))
 
         if self.version < self.earliest_version:
             raise Exception("CodeDirectory too old")
 
         # Read version specific fields
         if self.version >= self.supports_scatter:
-            self.scatter_offset = struct.unpack(">I", s.read(4))[0]
+            self.scatter_offset = struct.unpack(">I", sread(s, 4))[0]
         if self.version >= self.supports_team_id:
-            self.team_id_offset = struct.unpack(">I", s.read(4))[0]
+            self.team_id_offset = struct.unpack(">I", sread(s, 4))[0]
         if self.version >= self.supports_code_limit_64:
-            self.code_limit_64 = struct.unpack(">Q", s.read(8))[0]
+            self.code_limit_64 = struct.unpack(">Q", sread(s, 8))[0]
         if self.version >= self.supports_exec_segment:
             (
                 self.exec_seg_base,
                 self.exec_seg_limit,
                 self.exec_seg_flags,
-            ) = struct.unpack(">3Q", s.read(24))
+            ) = struct.unpack(">3Q", sread(s, 24))
         if self.version >= self.supports_pre_encrypt:
-            self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", s.read(16))
+            self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", sread(s, 16))
 
         # Because I don't know what to do with some of these fields, if we see them being used, throw an error
         # if (
@@ -212,16 +221,19 @@ class CodeDirectoryBlob(Blob):
 
         # Read code slot hashes
         self.seek(s, self.hash_offset)
+        assert(self.count_code)
+        assert(self.hash_size)
         for i in range(self.count_code):
-            self.code_hashes.append(s.read(self.hash_size))
+            self.code_hashes.append(sread(s, self.hash_size))
 
         # Read special slot hashes
         # These are "negative indexes" from hash_offset
         self.special_hashes: List[bytes] = []
         self.seek(s, self.hash_offset)
+        assert(self.count_special)
         for i in range(self.count_special):
             s.seek(-self.hash_size, SEEK_CUR)
-            this_hash = s.read(self.hash_size)
+            this_hash = sread(s, self.hash_size)
             s.seek(-self.hash_size, SEEK_CUR)
 
             slot_num = i + 1
@@ -245,12 +257,15 @@ class CodeDirectoryBlob(Blob):
         # ID and team ID
         self.seek(s, self.ident_offset)
         self.ident = read_string(s)
-        if self.team_id_offset is not None or self.team_id_offset > 0:
+        if self.team_id_offset is not None and self.team_id_offset > 0:
             self.seek(s, self.team_id_offset)
             self.team_id = read_string(s)
 
-    def validate(self, filename: str, special_hashes: Mapping[int, str]) -> None:
+    def validate(self, filename: str, special_hashes: Mapping[int, bytes]) -> None:
         # Code hashes
+        assert(self.page_size)
+        assert(self.hash_type)
+        assert(self.code_limit)
         page_size = 2 ** self.page_size
         hash_name = get_hash_name(self.hash_type)
         with open(filename, "rb") as f:
@@ -298,10 +313,12 @@ class CodeDirectoryBlob(Blob):
                 raise Exception("Was not able to compute a requirements hash")
             if special_hashes[reqs_slot] != self.reqs_hash:
                 raise Exception(
-                    f"Requirements hash mismatch. Expected {self.reqs_hash}, Calculated {special_hashes[reqs_slot]}"
+                    f"Requirements hash mismatch. Expected {self.reqs_hash.hex()}, Calculated {special_hashes[reqs_slot].hex()}"
                 )
 
     def get_hash(self) -> bytes:
+        assert(self.hash_type)
+        assert(self.blob_data)
         hash_name = get_hash_name(self.hash_type)
         h = hashlib.new(hash_name)
         h.update(self.blob_data)
@@ -322,10 +339,12 @@ class SignatureBlob(Blob):
         self.sig_alg: Optioanl[str] = None
         self.sig: Optiona[bytes] = None
 
-    def deserialize(self, s: io.IOBase):
+    def deserialize(self, s: io.RawIOBase):
         super().deserialize(s)
+        assert(self.magic)
+        assert(self.length)
         to_read = self.length - 8
-        self.cms_data = s.read(to_read)
+        self.cms_data = sread(s, to_read)
 
         content = ContentInfo.load(self.cms_data)
         signed_data = content["content"]
@@ -388,12 +407,15 @@ class RequirementsBlob(Blob):
         super().__init__(0xFADE0C01)
         self.blob_data: Optional[bytes] = None
 
-    def deserialize(self, s: io.IOBase):
+    def deserialize(self, s: io.RawIOBase):
         super().deserialize(s)
+        assert(self.magic)
+        assert(self.length)
         s.seek(-8, SEEK_CUR)
-        self.blob_data = s.read(self.length)
+        self.blob_data = sread(s, self.length)
 
     def get_hash(self, hash_name: str) -> bytes:
+        assert(self.blob_data)
         h = hashlib.new(hash_name)
         h.update(self.blob_data)
         return h.digest()
@@ -417,12 +439,12 @@ class EmbeddedSignatureBlob(Blob):
         sigmeta = sigmeta[0]
         self.sig_offset = sigmeta[1].dataoff
 
-    def deserialize(self, s: io.IOBase):
+    def deserialize(self, s: io.RawIOBase):
         super().deserialize(s)
 
-        (count,) = struct.unpack(">I", s.read(4))
+        (count,) = struct.unpack(">I", sread(s, 4))
         for i in range(count):
-            entry_type, offset = struct.unpack(">II", s.read(8))
+            entry_type, offset = struct.unpack(">II", sread(s, 8))
             self.entry_index.append((entry_type, offset))
 
             # Deserialize the entries at their offsets
