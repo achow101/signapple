@@ -1,7 +1,7 @@
 import io
 import struct
 
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from .utils import sread
 
@@ -26,3 +26,17 @@ class Blob(object):
         Seek to position in s at blob_offset + offset
         """
         s.seek(self.blob_offset + offset)
+
+
+class SuperBlob(Blob):
+    def __init__(self, magic: int):
+        super().__init__(magic)
+        self.entry_index: List[Tuple[int, int]] = []
+
+    def deserialize(self, s: io.RawIOBase):
+        super().deserialize(s)
+
+        (count,) = struct.unpack(">I", sread(s, 4))
+        for i in range(count):
+            entry_type, offset = struct.unpack(">II", sread(s, 8))
+            self.entry_index.append((entry_type, offset))

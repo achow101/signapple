@@ -17,7 +17,7 @@ from macholib.mach_o import LC_CODE_SIGNATURE  # type: ignore
 from oscrypto import asymmetric  # type: ignore
 from typing import List, Mapping, Optional, Tuple
 
-from signapple.blobs import Blob
+from signapple.blobs import Blob, SuperBlob
 from signapple.utils import sread, read_string
 
 # Primary slot numbers
@@ -386,10 +386,9 @@ class RequirementsBlob(Blob):
         return h.digest()
 
 
-class EmbeddedSignatureBlob(Blob):
+class EmbeddedSignatureBlob(SuperBlob):
     def __init__(self, filename: str):
         super().__init__(0xFADE0CC0)
-        self.entry_index: List[Tuple[int, int]] = []
         self.code_dir_blob: Optional[CodeDirectoryBlob] = None
         self.reqs_blob: Optional[RequirementsBlob] = None
         self.sig_blob: Optional[SignatureBlob] = None
@@ -407,11 +406,7 @@ class EmbeddedSignatureBlob(Blob):
     def deserialize(self, s: io.RawIOBase):
         super().deserialize(s)
 
-        (count,) = struct.unpack(">I", sread(s, 4))
-        for i in range(count):
-            entry_type, offset = struct.unpack(">II", sread(s, 8))
-            self.entry_index.append((entry_type, offset))
-
+        for entry_type, offset in self.entry_index:
             # Deserialize the entries at their offsets
             orig_pos = s.tell()
             self.seek(s, offset)
