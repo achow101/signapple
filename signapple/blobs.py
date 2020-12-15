@@ -211,10 +211,15 @@ class CodeDirectoryBlob(Blob):
         self.special_hashes: List[bytes] = []
         self.seek(s, self.hash_offset)
         assert self.count_special
+        zero_hash = b"\x00" * self.hash_size
         for i in range(self.count_special):
             s.seek(-self.hash_size, SEEK_CUR)
             this_hash = sread(s, self.hash_size)
             s.seek(-self.hash_size, SEEK_CUR)
+
+            # If the hash is the null hash (all 0's), skip
+            if this_hash == zero_hash:
+                continue
 
             slot_num = i + 1
 
