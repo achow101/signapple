@@ -238,6 +238,8 @@ class CodeDirectoryBlob(Blob):
                 self.rep_specific_hash = this_hash
             elif slot_num == ENT_DER_SLOT:
                 self.ent_der_hash = this_hash
+            else:
+                raise Exception(f"Unknown special slot type {slot_num}")
 
         # ID and team ID
         self.seek(s, self.ident_offset)

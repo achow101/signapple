@@ -149,6 +149,28 @@ def verify_mach_o_signature(filename: str):
             sig_superblob.code_dir_blob.hash_type,
         )
 
+    if sig_superblob.code_dir_blob.ent_hash:
+        assert sig_superblob.ent_blob
+        _validate_blob_hash(
+            sig_superblob.ent_blob,
+            sig_superblob.code_dir_blob.ent_hash,
+            sig_superblob.code_dir_blob.hash_type,
+        )
+
+    if sig_superblob.code_dir_blob.ent_der_hash:
+        assert sig_superblob.ent_der_blob
+        _validate_blob_hash(
+            sig_superblob.ent_der_blob,
+            sig_superblob.code_dir_blob.ent_der_hash,
+            sig_superblob.code_dir_blob.hash_type,
+        )
+
+    if (
+        sig_superblob.code_dir_blob.top_dir_hash
+        or sig_superblob.code_dir_blob.rep_specific_hash
+    ):
+        raise Exception("Unsupported special slot hash types")
+
     _validate_cms_signature(
         sig_superblob.sig_blob,
         sig_superblob.code_dir_blob.get_hash(sig_superblob.code_dir_blob.hash_type),
