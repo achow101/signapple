@@ -35,7 +35,6 @@ class Blob(object):
         self.magic: int = magic
         self.length: Optional[int] = None
         self.blob_offset: int = 0
-        self.blob_data: Optional[bytes] = None
 
     def serialize(self, s: BinaryIO):
         pass
@@ -48,12 +47,6 @@ class Blob(object):
             raise Exception(
                 f"Magic mismatch. Expected {hex(self.magic)}, got {hex(magic)}"
             )
-
-        assert self.magic
-        assert self.length
-        s.seek(-8, SEEK_CUR)
-        self.blob_data = sread(s, self.length)
-        s.seek(8 - self.length, SEEK_CUR)
 
     def seek(self, s: BinaryIO, offset):
         """
@@ -110,8 +103,6 @@ class CodeDirectoryBlob(Blob):
 
     def __init__(self):
         super().__init__(0xFADE0C02)
-
-        self.blob_data: Optional[Bytes] = None
 
         self.code_hashes: List[bytes] = []
 
@@ -289,9 +280,6 @@ class CodeDirectoryBlob(Blob):
         super().deserialize(s)
         assert self.magic is not None
         assert self.length is not None
-        s.seek(-8, SEEK_CUR)
-        self.blob_data = sread(s, self.length)
-        s.seek(8 - self.length, SEEK_CUR)
 
         # Read common header
         (
