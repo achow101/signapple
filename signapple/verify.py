@@ -39,25 +39,12 @@ def _validate_code_hashes(s: BinaryIO, cd_blob: CodeDirectoryBlob):
             )
 
 
-def _validate_code_resources_hash(content_dir: str, cr_hash: bytes, hash_type: int):
-    # CodeResources hash
-    code_res_file_path = os.path.join(content_dir, "_CodeSignature", "CodeResources")
-    with open(code_res_file_path, "rb") as f:
+def _validate_file_hash(file_path: str, target_hash: bytes, hash_type: int):
+    with open(file_path, "rb") as f:
         this_hash = get_hash(sread(f, -1), hash_type)
-        if cr_hash != this_hash:
+        if target_hash != this_hash:
             raise Exception(
-                f"CodeResources Hash mismatch. Expected {cr_hash.hex()}, Calculated {this_hash.hex()}"
-            )
-
-
-def _validate_info_hash(content_dir: str, info_hash: bytes, hash_type: int):
-    # Info.plist hash
-    info_file_path = os.path.join(content_dir, "Info.plist")
-    with open(info_file_path, "rb") as f:
-        this_hash = get_hash(sread(f, -1), hash_type)
-        if info_hash != this_hash:
-            raise Exception(
-                f"Info.plist Hash mismatch. Expected {info_hash.hex()}, Calculated {this_hash.hex()}"
+                f"CodeResources Hash mismatch. Expected {target_hash.hex()}, Calculated {this_hash.hex()}"
             )
 
 
@@ -130,29 +117,32 @@ def verify_mach_o_signature(filename: str):
         sig_superblob.deserialize(f)
 
         assert sig_superblob.code_dir_blob
-        assert sig_superblob.reqs_blob
         assert sig_superblob.sig_blob
 
         f.seek(0)
         _validate_code_hashes(f, sig_superblob.code_dir_blob)
 
     assert sig_superblob.code_dir_blob.hash_type
-    assert sig_superblob.code_dir_blob.res_dir_hash
-    assert sig_superblob.code_dir_blob.info_hash
     content_dir = os.path.split(os.path.split(os.path.abspath(filename))[0])[0]
-    _validate_code_resources_hash(
-        content_dir,
-        sig_superblob.code_dir_blob.res_dir_hash,
-        sig_superblob.code_dir_blob.hash_type,
-    )
-    _validate_info_hash(
-        content_dir,
-        sig_superblob.code_dir_blob.info_hash,
-        sig_superblob.code_dir_blob.hash_type,
-    )
 
-    if sig_superblob.reqs_blob:
-        assert sig_superblob.code_dir_blob.reqs_hash
+    if sig_superblob.code_dir_blob.res_dir_hash:
+        res_dir_path = os.path.join(content_dir, "_CodeSignature", "CodeResources")
+        _validate_file_hash(
+            res_dir_path,
+            sig_superblob.code_dir_blob.res_dir_hash,
+            sig_superblob.code_dir_blob.hash_type,
+        )
+
+    if sig_superblob.code_dir_blob.info_hash:
+        info_file_path = os.path.join(content_dir, "Info.plist")
+        _validate_file_hash(
+            info_file_path,
+            sig_superblob.code_dir_blob.info_hash,
+            sig_superblob.code_dir_blob.hash_type,
+        )
+
+    if sig_superblob.code_dir_blob.reqs_hash:
+        assert sig_superblob.reqs_blob
         _validate_blob_hash(
             sig_superblob.reqs_blob,
             sig_superblob.code_dir_blob.reqs_hash,
