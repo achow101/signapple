@@ -11,6 +11,7 @@ from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes # type: ignore
 from asn1crypto.x509 import Certificate # type: ignore
 from certvalidator.context import ValidationContext # type: ignore
 from certvalidator import CertificateValidator # type: ignore
+from enum import IntEnum
 from io import SEEK_CUR
 from macholib.mach_o import LC_CODE_SIGNATURE # type: ignore
 from oscrypto import asymmetric # type: ignore
@@ -18,23 +19,23 @@ from typing import List, Mapping, Optional, Tuple
 
 # Primary slot numbers
 # Found in both EmbeddedSignatureBlob and as negative numbers in CodeDirectory hashes array
-info_slot = 1  # Info.plist
-reqs_slot = 2  # Internal requirements
-res_dir_slot = 3  # Resource directory
-top_dir_slot = 4  # Application specific slot
-ent_slot = 5  # Embedded entitlement configuration
-rep_specific_slot = 6  # For use by disk rep
-ent_der_slot = 7  # DER representation of entitlements
+INFO_SLOT = 1  # Info.plist
+REQS_SLOT = 2  # Internal requirements
+RES_DIR_SLOT = 3  # Resource directory
+TOP_DIR_SLOT = 4  # Application specific slot
+ENT_SLOT = 5  # Embedded entitlement configuration
+REP_SPECIFIC_SLOT = 6  # For use by disk rep
+ENT_DER_SLOT = 7  # DER representation of entitlements
 
 
 # Virtual slot numbers
 # Found only in EmbeddedSignatureBlob
-code_dir_slot = 0  # CodeDirectory
-alt_code_dir_slot = 0x1000  # Alternate CodeDirectory array
-alt_code_dir_limit = 0x1005
-sig_slot = 0x10000  # CMS Signature
-id_slot = 0x10001  # Identification blob (detached signatures only)
-ticket_slot = 0x10002  # Ticket embedded in signature (DMG only)
+CODE_DIR_SLOT = 0  # CodeDirectory
+ALT_CODE_DIR_SLOT = 0x1000  # Alternate CodeDirectory array
+ALT_CODE_DIR_LIMIT = 0x1005
+SIG_SLOT = 0x10000  # CMS Signature
+ID_SLOT = 0x10001  # Identification blob (detached signatures only)
+TICKET_SLOT = 0x10002  # Ticket embedded in signature (DMG only)
 
 APPLE_ROOT_CERT = b'0\x82\x04\xbb0\x82\x03\xa3\xa0\x03\x02\x01\x02\x02\x01\x020\r\x06\t*\x86H\x86\xf7\r\x01\x01\x05\x05\x000b1\x0b0\t\x06\x03U\x04\x06\x13\x02US1\x130\x11\x06\x03U\x04\n\x13\nApple Inc.1&0$\x06\x03U\x04\x0b\x13\x1dApple Certification Authority1\x160\x14\x06\x03U\x04\x03\x13\rApple Root CA0\x1e\x17\r060425214036Z\x17\r350209214036Z0b1\x0b0\t\x06\x03U\x04\x06\x13\x02US1\x130\x11\x06\x03U\x04\n\x13\nApple Inc.1&0$\x06\x03U\x04\x0b\x13\x1dApple Certification Authority1\x160\x14\x06\x03U\x04\x03\x13\rApple Root CA0\x82\x01"0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x01\x05\x00\x03\x82\x01\x0f\x000\x82\x01\n\x02\x82\x01\x01\x00\xe4\x91\xa9\t\x1f\x91\xdb\x1eGP\xeb\x05\xed^y\x84-\xeb6\xa2WLU\xec\x8b\x19\x89\xde\xf9Kl\xf5\x07\xab"0\x02\xe8\x18>\xf8P\t\xd3\x7fA\xa8\x98\xf9\xd1\xcaf\x9c$k\x11\xd0\xa3\xbb\xe4\x1b*\xc3\x1f\x95\x9ez\x0c\xa4G\x8b[\xd4\x1673\xcb\xc4\x0fM\xce\x14i\xd1\xc9\x19r\xf5]\x0e\xd5\x7f_\x9b\xf2%\x03\xbaU\x8fM]\r\xf1d5#\x15K\x15Y\x1d\xb3\x94\xf7\xf6\x9c\x9e\xcfP\xba\xc1XPg\x8f\x08\xb4 \xf7\xcb\xac, op\xb6?\x010\x8c\xb7C\xcf\x0f\x9d=\xf3+I(\x1a\xc8\xfe\xce\xb5\xb9\x0e\xd9^\x1c\xd6\xcb=\xb5:\xad\xf4\x0f\x0e\x00\x92\x0b\xb1!\x16.t\xd5<\r\xdbb\x16\xab\xa3q\x92GSU\xc1\xaf/A\xb3\xf8\xfb\xe3p\xcd\xe6\xa3LE~\x1fLkP\x96A\x89\xc4tb\x0b\x10\x83A\x873\x8a\x81\xb10X\xecZ\x042\x8ch\xb3\x8f\x1d\xdees\xffg^e\xbcI\xd8v\x9f3\x14e\xa1w\x94\xc9-\x02\x03\x01\x00\x01\xa3\x82\x01z0\x82\x01v0\x0e\x06\x03U\x1d\x0f\x01\x01\xff\x04\x04\x03\x02\x01\x060\x0f\x06\x03U\x1d\x13\x01\x01\xff\x04\x050\x03\x01\x01\xff0\x1d\x06\x03U\x1d\x0e\x04\x16\x04\x14+\xd0iG\x94v\t\xfe\xf4k\x8d.@\xa6\xf7GM\x7f\x08^0\x1f\x06\x03U\x1d#\x04\x180\x16\x80\x14+\xd0iG\x94v\t\xfe\xf4k\x8d.@\xa6\xf7GM\x7f\x08^0\x82\x01\x11\x06\x03U\x1d \x04\x82\x01\x080\x82\x01\x040\x82\x01\x00\x06\t*\x86H\x86\xf7cd\x05\x010\x81\xf20*\x06\x08+\x06\x01\x05\x05\x07\x02\x01\x16\x1ehttps://www.apple.com/appleca/0\x81\xc3\x06\x08+\x06\x01\x05\x05\x07\x02\x020\x81\xb6\x1a\x81\xb3Reliance on this certificate by any party assumes acceptance of the then applicable standard terms and conditions of use, certificate policy and certification practice statements.0\r\x06\t*\x86H\x86\xf7\r\x01\x01\x05\x05\x00\x03\x82\x01\x01\x00\\6\x99L-x\xb7\xed\x8c\x9b\xdc\xf3w\x9b\xf2v\xd2w0O\xc1\x1f\x85\x83\x85\x1b\x99=G7\xf2\xa9\x9b@\x8e,\xd4\xb1\x90\x12\xd8\xbe\xf4s\x9b\xee\xd2d\x0f\xcbyO4\xd8\xa2>\xf9x\xffk\xc8\x07\xec}9\x83\x8bS \xd38\xc4\xb1\xbf\x9aO\nk\xff+\xfcY\xa7\x05\t|\x17@V\x11\x1et\xd3\xb7\x8b#;G\xa3\xd5o$\xe2\xeb\xd1\xb7p\xdf\x0fE\xe1\'\xca\xf1mx\xed\xe7\xb5\x17\x17\xa8\xdc~"5\xca%\xd5\xd9\x0f\xd6k\xd4\xa2$#\x11\xf7\xa1\xac\x8fs\x81`\xc6\x1b[\t/\x92\xb2\xf8DH\xf0`8\x9e\x15\xf5=&g \x8a3j\xf7\r\x82\xcf\xde\xeb\xa3/\xf9Sj[d\xc0c3w\xf7:\x07,V\xeb\xda\x0f!\x0e\xda\xbas\x19O\xb5\xd96\x7f\xc1\x87U\xd9\xa7\x99\xb92B\xfb\xd8\xd5q\x9e~\xa1R\xb7\x1b\xbd\x93B$\x12*\xc7\x0f\x1d\xb6M\x9c^c\xc8K\x80\x17P\xaa\x8a\xd5\xda\xe4\xfc\xd0\t\x077\xb0uu!'
 
@@ -103,12 +104,13 @@ class Blob(object):
 
 class CodeDirectoryBlob(Blob):
 
-    earliest_version = 0x20001
-    supports_scatter = 0x20100
-    supports_team_id = 0x20200
-    supports_code_limit_64 = 0x20300
-    supports_exec_segment = 0x20400
-    supports_pre_encrypt = 0x20500
+    class CDVersion(IntEnum):
+        EARLIEST = 0x20001
+        SCATTER = 0x20100
+        TEAM_ID = 0x20200
+        CODE_LIMIT_64 = 0x20300
+        EXEC_SEG = 0x20400
+        PRE_ENCRYPT = 0x20500
 
     def __init__(self):
         super().__init__(0xFADE0C02)
@@ -173,23 +175,23 @@ class CodeDirectoryBlob(Blob):
             self.spare2,
         ) = struct.unpack(">7I4BI", sread(s, 36))
 
-        if self.version < self.earliest_version:
+        if self.version < self.CDVersion.EARLIEST:
             raise Exception("CodeDirectory too old")
 
         # Read version specific fields
-        if self.version >= self.supports_scatter:
+        if self.version >= self.CDVersion.SCATTER:
             self.scatter_offset = struct.unpack(">I", sread(s, 4))[0]
-        if self.version >= self.supports_team_id:
+        if self.version >= self.CDVersion.TEAM_ID:
             self.team_id_offset = struct.unpack(">I", sread(s, 4))[0]
-        if self.version >= self.supports_code_limit_64:
+        if self.version >= self.CDVersion.CODE_LIMIT_64:
             self.code_limit_64 = struct.unpack(">Q", sread(s, 8))[0]
-        if self.version >= self.supports_exec_segment:
+        if self.version >= self.CDVersion.EXEC_SEG:
             (
                 self.exec_seg_base,
                 self.exec_seg_limit,
                 self.exec_seg_flags,
             ) = struct.unpack(">3Q", sread(s, 24))
-        if self.version >= self.supports_pre_encrypt:
+        if self.version >= self.CDVersion.PRE_ENCRYPT:
             self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", sread(s, 16))
 
         # Because I don't know what to do with some of these fields, if we see them being used, throw an error
@@ -239,19 +241,19 @@ class CodeDirectoryBlob(Blob):
             slot_num = i + 1
 
             # Put special slot in named variable
-            if slot_num == info_slot:
+            if slot_num == INFO_SLOT:
                 self.info_hash = this_hash
-            elif slot_num == reqs_slot:
+            elif slot_num == REQS_SLOT:
                 self.reqs_hash = this_hash
-            elif slot_num == res_dir_slot:
+            elif slot_num == RES_DIR_SLOT:
                 self.res_dir_hash = this_hash
-            elif slot_num == top_dir_slot:
+            elif slot_num == TOP_DIR_SLOT:
                 self.top_dir_hash = this_hash
-            elif slot_num == ent_slot:
+            elif slot_num == ENT_SLOT:
                 self.ent_hash = this_hash
-            elif slot_num == rep_specific_slot:
+            elif slot_num == REP_SPECIFIC_SLOT:
                 self.rep_specific_hash = this_hash
-            elif slot_num == ent_der_slot:
+            elif slot_num == ENT_DER_SLOT:
                 self.ent_der_hash = this_hash
 
         # ID and team ID
@@ -309,11 +311,11 @@ class CodeDirectoryBlob(Blob):
                     )
         # Requirements hash
         if self.reqs_hash is not None:
-            if reqs_slot not in special_hashes:
+            if REQS_SLOT not in special_hashes:
                 raise Exception("Was not able to compute a requirements hash")
-            if special_hashes[reqs_slot] != self.reqs_hash:
+            if special_hashes[REQS_SLOT] != self.reqs_hash:
                 raise Exception(
-                    f"Requirements hash mismatch. Expected {self.reqs_hash.hex()}, Calculated {special_hashes[reqs_slot].hex()}"
+                    f"Requirements hash mismatch. Expected {self.reqs_hash.hex()}, Calculated {special_hashes[REQS_SLOT].hex()}"
                 )
 
     def get_hash(self) -> bytes:
@@ -451,13 +453,13 @@ class EmbeddedSignatureBlob(Blob):
             orig_pos = s.tell()
             self.seek(s, offset)
 
-            if entry_type == code_dir_slot:
+            if entry_type == CODE_DIR_SLOT:
                 self.code_dir_blob = CodeDirectoryBlob()
                 self.code_dir_blob.deserialize(s)
-            elif entry_type == sig_slot:
+            elif entry_type == SIG_SLOT:
                 self.sig_blob = SignatureBlob()
                 self.sig_blob.deserialize(s)
-            elif entry_type == reqs_slot:
+            elif entry_type == REQS_SLOT:
                 self.reqs_blob = RequirementsBlob()
                 self.reqs_blob.deserialize(s)
 
@@ -471,7 +473,7 @@ class EmbeddedSignatureBlob(Blob):
 
     def validate(self):
         special_slots = {
-            reqs_slot: self.reqs_blob.get_hash(
+            REQS_SLOT: self.reqs_blob.get_hash(
                 get_hash_name(self.code_dir_blob.hash_type)
             )
         }
