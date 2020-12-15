@@ -1,4 +1,6 @@
-from typing import BinaryIO
+import hashlib
+
+from typing import BinaryIO, Optional
 
 
 def sread(s: BinaryIO, n: int) -> bytes:
@@ -18,13 +20,23 @@ def read_string(s: BinaryIO) -> bytes:
     return string
 
 
-def get_hash_name(t: int) -> str:
-    if t == 1:
-        return "sha1"
-    elif t == 2 or t == 3:
-        return "sha256"
-    elif t == 4:
-        return "sha384"
-    elif t == 5:
-        return "sha512"
-    raise Exception("No or unknown hash type")
+def get_hash(data: bytes, hash_type: Optional[int]) -> bytes:
+    if hash_type == 1:
+        hash_name = "sha1"
+    elif hash_type == 2 or hash_type == 3:
+        hash_name = "sha256"
+    elif hash_type == 4:
+        hash_name = "sha384"
+    elif hash_type == 5:
+        hash_name = "sha512"
+    else:
+        raise Exception("No or unknown hash type")
+
+    h = hashlib.new(hash_name)
+    h.update(data)
+    r = h.digest()
+
+    if hash_type == 3:
+        # This is a sha256 hash truncated to 20 bytes
+        return r[:20]
+    return r

@@ -1,4 +1,3 @@
-import hashlib
 import struct
 
 from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes  # type: ignore
@@ -7,7 +6,7 @@ from enum import IntEnum
 from io import SEEK_CUR
 from typing import BinaryIO, List, Optional, Tuple
 
-from .utils import get_hash_name, sread, read_string
+from .utils import get_hash, sread, read_string
 
 
 # Primary slot numbers
@@ -230,10 +229,7 @@ class CodeDirectoryBlob(Blob):
     def get_hash(self) -> bytes:
         assert self.hash_type
         assert self.blob_data
-        hash_name = get_hash_name(self.hash_type)
-        h = hashlib.new(hash_name)
-        h.update(self.blob_data)
-        return h.digest()
+        return get_hash(self.blob_data, self.hash_type)
 
 
 class SignatureBlob(Blob):
@@ -296,11 +292,9 @@ class RequirementsBlob(Blob):
         s.seek(-8, SEEK_CUR)
         self.blob_data = sread(s, self.length)
 
-    def get_hash(self, hash_name: str) -> bytes:
+    def get_hash(self, hash_type: Optional[int]) -> bytes:
         assert self.blob_data
-        h = hashlib.new(hash_name)
-        h.update(self.blob_data)
-        return h.digest()
+        return get_hash(self.blob_data, hash_type)
 
 
 class EmbeddedSignatureBlob(SuperBlob):
