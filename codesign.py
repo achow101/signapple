@@ -83,7 +83,9 @@ class Blob(object):
         magic, self.length = struct.unpack(">II", s.read(8))
 
         if magic != self.magic:
-            raise Exception("Magic mismatch. Expected {hex(self.magic)}}, got {hex(magic)}")
+            raise Exception(
+                "Magic mismatch. Expected {hex(self.magic)}}, got {hex(magic)}"
+            )
 
     def seek(self, s: io.IOBase, offset):
         """
@@ -247,9 +249,7 @@ class CodeDirectoryBlob(Blob):
             self.seek(s, self.team_id_offset)
             self.team_id = read_string(s)
 
-    def validate(
-        self, filename: str, special_hashes: Mapping[int, str]
-    ) -> None:
+    def validate(self, filename: str, special_hashes: Mapping[int, str]) -> None:
         # Code hashes
         page_size = 2 ** self.page_size
         hash_name = get_hash_name(self.hash_type)
@@ -464,8 +464,11 @@ def verify(args):
     sb.validate()
     print("Code signature is valid")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Signs and verifies MacOS code signatures")
+    parser = argparse.ArgumentParser(
+        description="Signs and verifies MacOS code signatures"
+    )
 
     subparsers = parser.add_subparsers(help="Commands", dest="command", required=True)
 
