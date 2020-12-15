@@ -45,6 +45,25 @@ colorama = ["colorama (>=0.4.3)"]
 d = ["aiohttp (>=3.3.2)", "aiohttp-cors"]
 
 [[package]]
+name = "certvalidator"
+version = "0.12.0.dev1"
+description = ""
+category = "main"
+optional = false
+python-versions = "*"
+develop = false
+
+[package.dependencies]
+asn1crypto = ">=1.2.0"
+oscrypto = ">=1.1.0"
+
+[package.source]
+type = "git"
+url = "https://github.com/achow101/certvalidator.git"
+reference = "allow-more-criticals"
+resolved_reference = "e5bdb4bfcaa09fa0af355eb8867d00dfeecba08c"
+
+[[package]]
 name = "click"
 version = "7.1.2"
 description = "Composable command line interface toolkit"
@@ -125,7 +144,7 @@ python-versions = "*"
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "609fe04180234485075918e6cc4e5af888944db5a755e02315b3042bead6a19f"
+content-hash = "f5bd763fad9bfa26ef19ed8761796ae862060e2cf1eee6fa734eece604058345"
 
 [metadata.files]
 altgraph = [
@@ -143,6 +162,7 @@ asn1crypto = [
 black = [
     {file = "black-20.8b1.tar.gz", hash = "sha256:1c02557aa099101b9d21496f8a914e9ed2222ef70336404eeeac8edba836fbea"},
 ]
+certvalidator = []
 click = [
     {file = "click-7.1.2-py2.py3-none-any.whl", hash = "sha256:dacca89f4bfadd5de3d7489b7c8a566eee0d3676333fbb50030263894c38c0dc"},
     {file = "click-7.1.2.tar.gz", hash = "sha256:d2b5255c7c6349bc1bd1e59e08cd12acbbd63ce649f2588755783aa94dfb6b1a"},
