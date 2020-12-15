@@ -42,7 +42,7 @@ class Blob(object):
 
         if magic != self.magic:
             raise Exception(
-                "Magic mismatch. Expected {hex(self.magic)}}, got {hex(magic)}"
+                f"Magic mismatch. Expected {hex(self.magic)}, got {hex(magic)}"
             )
 
     def seek(self, s: BinaryIO, offset):
