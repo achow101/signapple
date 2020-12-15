@@ -35,6 +35,7 @@ class Blob(object):
         self.magic: int = magic
         self.length: Optional[int] = None
         self.blob_offset: int = 0
+        self.blob_data: Optional[bytes] = None
 
     def deserialize(self, s: BinaryIO):
         self.blob_offset = s.tell()
@@ -45,11 +46,21 @@ class Blob(object):
                 f"Magic mismatch. Expected {hex(self.magic)}, got {hex(magic)}"
             )
 
+        assert self.magic
+        assert self.length
+        s.seek(-8, SEEK_CUR)
+        self.blob_data = sread(s, self.length)
+        s.seek(8 - self.length, SEEK_CUR)
+
     def seek(self, s: BinaryIO, offset):
         """
         Seek to position in s at blob_offset + offset
         """
         s.seek(self.blob_offset + offset)
+
+    def get_hash(self, hash_type: Optional[int]) -> bytes:
+        assert self.blob_data
+        return get_hash(self.blob_data, hash_type)
 
 
 class SuperBlob(Blob):
@@ -283,18 +294,6 @@ class RequirementsBlob(Blob):
 
     def __init__(self):
         super().__init__(0xFADE0C01)
-        self.blob_data: Optional[bytes] = None
-
-    def deserialize(self, s: BinaryIO):
-        super().deserialize(s)
-        assert self.magic
-        assert self.length
-        s.seek(-8, SEEK_CUR)
-        self.blob_data = sread(s, self.length)
-
-    def get_hash(self, hash_type: Optional[int]) -> bytes:
-        assert self.blob_data
-        return get_hash(self.blob_data, hash_type)
 
 
 class EmbeddedSignatureBlob(SuperBlob):

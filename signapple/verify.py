@@ -10,6 +10,7 @@ from oscrypto import asymmetric  # type: ignore
 from typing import BinaryIO
 
 from .blobs import (
+    Blob,
     CodeDirectoryBlob,
     EmbeddedSignatureBlob,
     SignatureBlob,
@@ -60,12 +61,14 @@ def _validate_info_hash(content_dir: str, info_hash: bytes, hash_type: int):
             )
 
 
-def _validate_reqs_hash(reqs_blob: RequirementsBlob, reqs_hash: bytes, hash_type: int):
-    # Requirements hash
-    this_hash = reqs_blob.get_hash(hash_type)
-    if this_hash != reqs_hash:
+def _validate_blob_hash(blob: Blob, target_hash: bytes, hash_type: int):
+    """
+    Hash a blob and check it. Use for several blobs.
+    """
+    this_hash = blob.get_hash(hash_type)
+    if this_hash != target_hash:
         raise Exception(
-            f"Requirements hash mismatch. Expected {reqs_hash.hex()}, Calculated {this_hash.hex()}"
+            f"Blob (magic {blob.magic}) hash mismatch. Expected {target_hash.hex()}, calculated {this_hash.hex()}"
         )
 
 
@@ -136,7 +139,6 @@ def verify_mach_o_signature(filename: str):
     assert sig_superblob.code_dir_blob.hash_type
     assert sig_superblob.code_dir_blob.res_dir_hash
     assert sig_superblob.code_dir_blob.info_hash
-    assert sig_superblob.code_dir_blob.reqs_hash
     content_dir = os.path.split(os.path.split(os.path.abspath(filename))[0])[0]
     _validate_code_resources_hash(
         content_dir,
@@ -148,11 +150,15 @@ def verify_mach_o_signature(filename: str):
         sig_superblob.code_dir_blob.info_hash,
         sig_superblob.code_dir_blob.hash_type,
     )
-    _validate_reqs_hash(
-        sig_superblob.reqs_blob,
-        sig_superblob.code_dir_blob.reqs_hash,
-        sig_superblob.code_dir_blob.hash_type,
-    )
+
+    if sig_superblob.reqs_blob:
+        assert sig_superblob.code_dir_blob.reqs_hash
+        _validate_blob_hash(
+            sig_superblob.reqs_blob,
+            sig_superblob.code_dir_blob.reqs_hash,
+            sig_superblob.code_dir_blob.hash_type,
+        )
+
     _validate_cms_signature(
         sig_superblob.sig_blob, sig_superblob.code_dir_blob.get_hash()
     )
