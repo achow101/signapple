@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "python-macos-codesign"
+name = "signapple"
 version = "0.1.0"
 description = "Signing and verification tool for MacOS code signatures"
 authors = ["Andrew Chow <achow101-github@achow101.com>"]
