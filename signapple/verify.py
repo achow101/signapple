@@ -150,5 +150,6 @@ def verify_mach_o_signature(filename: str):
         )
 
     _validate_cms_signature(
-        sig_superblob.sig_blob, sig_superblob.code_dir_blob.get_hash()
+        sig_superblob.sig_blob,
+        sig_superblob.code_dir_blob.get_hash(sig_superblob.code_dir_blob.hash_type),
     )

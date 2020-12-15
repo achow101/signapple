@@ -241,11 +241,6 @@ class CodeDirectoryBlob(Blob):
             self.seek(s, self.team_id_offset)
             self.team_id = read_string(s)
 
-    def get_hash(self) -> bytes:
-        assert self.hash_type
-        assert self.blob_data
-        return get_hash(self.blob_data, self.hash_type)
-
 
 class SignatureBlob(Blob):
     """
