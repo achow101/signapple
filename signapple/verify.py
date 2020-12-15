@@ -78,7 +78,7 @@ def _validate_cms_signature(sig_blob: SignatureBlob, cd_hash: bytes):
             message_digest = attr["values"][0].native
             if message_digest != cd_hash:
                 raise Exception(
-                    "CodeDirectory Hash mismatch. Expected {message_digest}, Calculated {code_dir_hash}"
+                    f"CodeDirectory Hash mismatch. Expected {message_digest.hex()}, Calculated {cd_hash.hex()}"
                 )
     if message_digest is None:
         raise Exception("message_digest not found in signature")

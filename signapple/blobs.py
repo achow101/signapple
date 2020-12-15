@@ -3,8 +3,8 @@ import struct
 from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes  # type: ignore
 from asn1crypto.x509 import Certificate  # type: ignore
 from enum import IntEnum
-from io import SEEK_CUR
-from typing import BinaryIO, List, Optional, Tuple
+from io import BytesIO, SEEK_CUR
+from typing import BinaryIO, Dict, List, Optional, Tuple
 
 from .utils import get_hash, sread, read_string
 
@@ -37,6 +37,9 @@ class Blob(object):
         self.blob_offset: int = 0
         self.blob_data: Optional[bytes] = None
 
+    def serialize(self, s: BinaryIO):
+        pass
+
     def deserialize(self, s: BinaryIO):
         self.blob_offset = s.tell()
         magic, self.length = struct.unpack(">II", sread(s, 8))
@@ -59,8 +62,27 @@ class Blob(object):
         s.seek(self.blob_offset + offset)
 
     def get_hash(self, hash_type: Optional[int]) -> bytes:
+        s = BytesIO()
+        self.serialize(s)
+        return get_hash(s.getvalue(), hash_type)
+
+
+class DataBlob(Blob):
+    def __init__(self, magic: int):
+        super().__init__(magic)
+        self.blob_data: Optional[bytes] = None
+
+    def deserialize(self, s: BinaryIO):
+        super().deserialize(s)
+        assert self.magic
+        assert self.length
+        s.seek(-8, SEEK_CUR)
+        self.blob_data = sread(s, self.length)
+        s.seek(8 - self.length, SEEK_CUR)
+
+    def serialize(self, s: BinaryIO):
         assert self.blob_data
-        return get_hash(self.blob_data, hash_type)
+        s.write(self.blob_data)
 
 
 class SuperBlob(Blob):
@@ -124,6 +146,144 @@ class CodeDirectoryBlob(Blob):
         self.exec_seg_flags: Optional[int] = None
         self.runtime: Optional[int] = None
         self.pre_encrypt_offset: Optional[int] = None
+
+    def get_length_offsets(self) -> Tuple[int, Dict[str, int]]:
+        offsets = {}
+        length = 44
+        if self.version >= self.CDVersion.SCATTER:
+            length += 4
+        if self.version >= self.CDVersion.TEAM_ID:
+            length += 4
+        if self.version >= self.CDVersion.CODE_LIMIT_64:
+            length += 8
+        if self.version >= self.CDVersion.EXEC_SEG:
+            length += 24
+        if self.version >= self.CDVersion.PRE_ENCRYPT:
+            length += 8
+
+        ident_offset = length
+        assert self.ident_offset is None or self.ident_offset == ident_offset
+        offsets["ident"] = ident_offset
+
+        assert self.ident
+        length += len(self.ident) + 1
+
+        if self.version >= self.CDVersion.TEAM_ID:
+            assert self.team_id
+            team_id_offset = length
+            assert self.team_id_offset == team_id_offset
+            offsets["team_id"] = team_id_offset
+            length += len(self.team_id) + 1
+
+        count_special = 0
+        if self.ent_der_hash:
+            count_special += 7
+        elif self.rep_specific_hash:
+            count_special += 6
+        elif self.ent_hash:
+            count_special += 5
+        elif self.top_dir_hash:
+            count_special += 4
+        elif self.res_dir_hash:
+            count_special += 3
+        elif self.reqs_hash:
+            count_special += 2
+        elif self.info_hash:
+            count_special += 1
+
+        assert self.hash_size
+        length += count_special * self.hash_size
+        hash_offset = length
+        assert self.hash_offset is None or self.hash_offset == hash_offset
+        offsets["hash"] = hash_offset
+
+        length += len(self.code_hashes) * self.hash_size
+
+        return length, offsets
+
+    def serialize(self, s: BinaryIO):
+        length, offsets = self.get_length_offsets()
+        assert self.length is None or length == self.length
+
+        special_slots = [
+            self.info_hash,
+            self.reqs_hash,
+            self.res_dir_hash,
+            self.top_dir_hash,
+            self.ent_hash,
+            self.rep_specific_hash,
+            self.ent_der_hash,
+        ]
+        if self.ent_der_hash:
+            special_slots = special_slots[:7]
+        elif self.rep_specific_hash:
+            special_slots = special_slots[:6]
+        elif self.ent_hash:
+            special_slots = special_slots[:5]
+        elif self.top_dir_hash:
+            special_slots = special_slots[:4]
+        elif self.res_dir_hash:
+            special_slots = special_slots[:3]
+        elif self.reqs_hash:
+            special_slots = special_slots[:2]
+        elif self.info_hash:
+            special_slots = special_slots[:1]
+
+        assert self.count_special is None or self.count_special == len(special_slots)
+
+        s.write(
+            struct.pack(
+                ">9I4BI",
+                self.magic,
+                length,
+                self.version,
+                self.flags,
+                offsets["hash"],
+                offsets["ident"],
+                len(special_slots),
+                len(self.code_hashes),
+                self.code_limit,
+                self.hash_size,
+                self.hash_type,
+                self.platform,
+                self.page_size,
+                self.spare2,
+            )
+        )
+
+        if self.version >= self.CDVersion.SCATTER:
+            s.write(struct.pack(">I", self.scatter_offset))
+        if self.version >= self.CDVersion.TEAM_ID:
+            s.write(struct.pack(">I", offsets["team_id"]))
+        if self.version >= self.CDVersion.CODE_LIMIT_64:
+            s.write(struct.pack(">Q", self.code_limit_64))
+        if self.version >= self.CDVersion.EXEC_SEG:
+            s.write(
+                struct.pack(
+                    ">3Q", self.exec_seg_base, self.exec_seg_limit, self.exec_seg_flags
+                )
+            )
+        if self.version >= self.CDVersion.PRE_ENCRYPT:
+            s.write(struct.pack(">2I", self.runtime, self.pre_encrypt_offset))
+
+        assert self.ident
+        s.write(self.ident)
+        s.write(b"\x00")
+
+        if self.version >= self.CDVersion.TEAM_ID:
+            assert self.team_id
+            s.write(self.team_id)
+            s.write(b"\x00")
+
+        assert self.hash_size
+        zero_hash = b"\x00" * self.hash_size
+        for h in reversed(special_slots):
+            if h is None:
+                s.write(zero_hash)
+            else:
+                s.write(h)
+        for h in self.code_hashes:
+            s.write(h)
 
     def deserialize(self, s: BinaryIO):
         super().deserialize(s)
@@ -263,6 +423,12 @@ class SignatureBlob(Blob):
         self.sig_alg: Optioanl[str] = None
         self.sig: Optiona[bytes] = None
 
+    def serialize(self, s: BinaryIO):
+        assert self.cms_data
+        length = len(self.cms_data) + 8
+        s.write(struct.pack(">2I", self.magic, length))
+        s.write(self.cms_data)
+
     def deserialize(self, s: BinaryIO):
         super().deserialize(s)
         assert self.magic
@@ -291,7 +457,7 @@ class SignatureBlob(Blob):
         self.sig = signer_info["signature"].contents
 
 
-class RequirementsBlob(Blob):
+class RequirementsBlob(DataBlob):
     """
     We treat these blobs as black boxes. Apple's csreq tool will create these for us.
     These are SuperBlobs, but we don't really care and just need to put them in the correct
@@ -310,6 +476,32 @@ class EmbeddedSignatureBlob(SuperBlob):
         self.sig_blob: Optional[SignatureBlob] = None
         self.ent_blob: Optional[EntitlementsBlob] = None
         self.ent_der_blob: Optional[EntitlementsDERBlob] = None
+
+    def serialize(self, s: BinaryIO):
+        v = BytesIO()
+        entry_index = []
+        if self.code_dir_blob:
+            entry_index.append((CODE_DIR_SLOT, v.tell()))
+            self.code_dir_blob.serialize(v)
+        if self.reqs_blob:
+            self.reqs_blob.serialize(v)
+            entry_index.append((REQS_SLOT, v.tell()))
+        if self.sig_blob:
+            self.sig_blob.serialize(v)
+            entry_index.append((SIG_SLOT, v.tell()))
+        if self.ent_blob:
+            self.ent_blob.serialize(v)
+            entry_index.append((ENT_SLOT, v.tell()))
+        if self.ent_der_blob:
+            self.ent_der_blob.serialize(v)
+            entry_index.append((ENT_DER_SLOT, v.tell()))
+
+        first_offset = 8 + 8 * len(entry_index)
+        length = first_offset + v.tell()
+        s.write(struct.pack(">2I", self.magic, length))
+        for e, o in entry_index:
+            s.write(struct.pack(">2I", e, o + first_offset))
+        s.write(v.getvalue())
 
     def deserialize(self, s: BinaryIO):
         super().deserialize(s)
@@ -340,11 +532,11 @@ class EmbeddedSignatureBlob(SuperBlob):
             s.seek(orig_pos)
 
 
-class EntitlementsBlob(Blob):
+class EntitlementsBlob(DataBlob):
     def __init__(self):
         super().__init__(0xFADE7171)
 
 
-class EntitlementsDERBlob(Blob):
+class EntitlementsDERBlob(DataBlob):
     def __init__(self):
         super().__init__(0xFADE7172)
