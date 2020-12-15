@@ -306,6 +306,8 @@ class EmbeddedSignatureBlob(SuperBlob):
         self.code_dir_blob: Optional[CodeDirectoryBlob] = None
         self.reqs_blob: Optional[RequirementsBlob] = None
         self.sig_blob: Optional[SignatureBlob] = None
+        self.ent_blob: Optional[EntitlementsBlob] = None
+        self.ent_der_blob: Optional[EntitlementsDERBlob] = None
 
     def deserialize(self, s: BinaryIO):
         super().deserialize(s)
@@ -324,5 +326,23 @@ class EmbeddedSignatureBlob(SuperBlob):
             elif entry_type == REQS_SLOT:
                 self.reqs_blob = RequirementsBlob()
                 self.reqs_blob.deserialize(s)
+            elif entry_type == ENT_SLOT:
+                self.ent_blob = EntitlementsBlob()
+                self.ent_blob.deserialize(s)
+            elif entry_type == ENT_DER_SLOT:
+                self.ent_der_blob = EntitlementsDERBlob()
+                self.ent_der_blob.deserialize(s)
+            else:
+                raise Exception(f"Unknown blob entry type {entry_type}")
 
             s.seek(orig_pos)
+
+
+class EntitlementsBlob(Blob):
+    def __init__(self):
+        super().__init__(0xFADE7171)
+
+
+class EntitlementsDERBlob(Blob):
+    def __init__(self):
+        super().__init__(0xFADE7172)
