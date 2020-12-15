@@ -3,18 +3,18 @@
 import argparse
 import hashlib
 import io
-import macholib.MachO # type: ignore
+import macholib.MachO  # type: ignore
 import os
 import struct
 
-from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes # type: ignore
-from asn1crypto.x509 import Certificate # type: ignore
-from certvalidator.context import ValidationContext # type: ignore
-from certvalidator import CertificateValidator # type: ignore
+from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes  # type: ignore
+from asn1crypto.x509 import Certificate  # type: ignore
+from certvalidator.context import ValidationContext  # type: ignore
+from certvalidator import CertificateValidator  # type: ignore
 from enum import IntEnum
 from io import SEEK_CUR
-from macholib.mach_o import LC_CODE_SIGNATURE # type: ignore
-from oscrypto import asymmetric # type: ignore
+from macholib.mach_o import LC_CODE_SIGNATURE  # type: ignore
+from oscrypto import asymmetric  # type: ignore
 from typing import List, Mapping, Optional, Tuple
 
 # Primary slot numbers
@@ -153,8 +153,8 @@ class CodeDirectoryBlob(Blob):
 
     def deserialize(self, s: io.RawIOBase):
         super().deserialize(s)
-        assert(self.magic is not None)
-        assert(self.length is not None)
+        assert self.magic is not None
+        assert self.length is not None
         s.seek(-8, SEEK_CUR)
         self.blob_data = sread(s, self.length)
         s.seek(8 - self.length, SEEK_CUR)
@@ -223,8 +223,8 @@ class CodeDirectoryBlob(Blob):
 
         # Read code slot hashes
         self.seek(s, self.hash_offset)
-        assert(self.count_code)
-        assert(self.hash_size)
+        assert self.count_code
+        assert self.hash_size
         for i in range(self.count_code):
             self.code_hashes.append(sread(s, self.hash_size))
 
@@ -232,7 +232,7 @@ class CodeDirectoryBlob(Blob):
         # These are "negative indexes" from hash_offset
         self.special_hashes: List[bytes] = []
         self.seek(s, self.hash_offset)
-        assert(self.count_special)
+        assert self.count_special
         for i in range(self.count_special):
             s.seek(-self.hash_size, SEEK_CUR)
             this_hash = sread(s, self.hash_size)
@@ -265,9 +265,9 @@ class CodeDirectoryBlob(Blob):
 
     def validate(self, filename: str, special_hashes: Mapping[int, bytes]) -> None:
         # Code hashes
-        assert(self.page_size)
-        assert(self.hash_type)
-        assert(self.code_limit)
+        assert self.page_size
+        assert self.hash_type
+        assert self.code_limit
         page_size = 2 ** self.page_size
         hash_name = get_hash_name(self.hash_type)
         with open(filename, "rb") as f:
@@ -319,8 +319,8 @@ class CodeDirectoryBlob(Blob):
                 )
 
     def get_hash(self) -> bytes:
-        assert(self.hash_type)
-        assert(self.blob_data)
+        assert self.hash_type
+        assert self.blob_data
         hash_name = get_hash_name(self.hash_type)
         h = hashlib.new(hash_name)
         h.update(self.blob_data)
@@ -343,8 +343,8 @@ class SignatureBlob(Blob):
 
     def deserialize(self, s: io.RawIOBase):
         super().deserialize(s)
-        assert(self.magic)
-        assert(self.length)
+        assert self.magic
+        assert self.length
         to_read = self.length - 8
         self.cms_data = sread(s, to_read)
 
@@ -411,13 +411,13 @@ class RequirementsBlob(Blob):
 
     def deserialize(self, s: io.RawIOBase):
         super().deserialize(s)
-        assert(self.magic)
-        assert(self.length)
+        assert self.magic
+        assert self.length
         s.seek(-8, SEEK_CUR)
         self.blob_data = sread(s, self.length)
 
     def get_hash(self, hash_name: str) -> bytes:
-        assert(self.blob_data)
+        assert self.blob_data
         h = hashlib.new(hash_name)
         h.update(self.blob_data)
         return h.digest()
