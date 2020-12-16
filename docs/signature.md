@@ -332,6 +332,7 @@ enum MatchOperation {
 Source code location: `OSX/libsecurity_codesigning/lib/sigblob.h`
 
 The entitlements for this executable encoded as a plist file embedded in a `Blob`.
+These entitlements are a dictionary mapping strings to a variety of possible values.
 This is essentially a `BlobWrapper` for a plist file.
 The magic for `EntitlementBlob` is `0xfade7171`.
 
@@ -342,9 +343,6 @@ struct EntitlementBlob {
     char* data; // Entitlement as a plist file
 }
 ```
-
-TODO: Figure out what is in the plist for entitlements
-
 
 ### `EntitlementDERBlob`
 
