@@ -44,7 +44,7 @@ def _validate_file_hash(file_path: str, target_hash: bytes, hash_type: int):
         this_hash = get_hash(sread(f, -1), hash_type)
         if target_hash != this_hash:
             raise Exception(
-                f"CodeResources Hash mismatch. Expected {target_hash.hex()}, Calculated {this_hash.hex()}"
+                f"{file_path} Hash mismatch. Expected {target_hash.hex()}, Calculated {this_hash.hex()}"
             )
 
 
@@ -55,7 +55,7 @@ def _validate_blob_hash(blob: Blob, target_hash: bytes, hash_type: int):
     this_hash = blob.get_hash(hash_type)
     if this_hash != target_hash:
         raise Exception(
-            f"Blob (magic {blob.magic}) hash mismatch. Expected {target_hash.hex()}, calculated {this_hash.hex()}"
+            f"Blob (magic {hex(blob.magic)}) hash mismatch. Expected {target_hash.hex()}, calculated {this_hash.hex()}"
         )
 
 

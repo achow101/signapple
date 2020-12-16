@@ -1,10 +1,12 @@
+import plistlib
 import struct
 
 from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes  # type: ignore
 from asn1crypto.x509 import Certificate  # type: ignore
+from collections import OrderedDict
 from enum import IntEnum
 from io import BytesIO, SEEK_CUR
-from typing import BinaryIO, Dict, List, Optional, Tuple
+from typing import Any, BinaryIO, Dict, List, Optional, Tuple
 
 from .reqs import Requirement, deserialize_requirement
 from .utils import get_hash, sread, read_string
@@ -608,9 +610,30 @@ class RequirementsBlob(SuperBlob):
             s.seek(orig_pos)
 
 
-class EntitlementsBlob(DataBlob):
-    def __init__(self):
+Entitlements = Dict[str, Any]
+
+
+class EntitlementsBlob(Blob):
+    def __init__(self, ent: Optional[Entitlements] = None):
         super().__init__(0xFADE7171)
+        self.ent: Optional[Entitlements] = ent
+
+    def serialize(self, s: BinaryIO):
+        assert self.ent
+        import pprint
+        pprint.pprint(self.ent)
+        v = BytesIO()
+        plistlib.dump(self.ent, v, fmt=plistlib.FMT_XML, sort_keys=False)
+        ent_data = v.getvalue()[:-1] # We need to drop the last byte because that's a newline not present in codesign's result
+        length = 8 + len(ent_data)
+        s.write(struct.pack(">2I", self.magic, length))
+        s.write(ent_data)
+
+    def deserialize(self, s: BinaryIO):
+        super().deserialize(s)
+        assert self.length
+        data = sread(s, self.length - 8)
+        self.ent = plistlib.loads(data, fmt=plistlib.FMT_XML, dict_type=OrderedDict)
 
 
 class EntitlementsDERBlob(DataBlob):
