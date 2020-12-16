@@ -472,21 +472,21 @@ class EmbeddedSignatureBlob(SuperBlob):
             entry_index.append((CODE_DIR_SLOT, v.tell()))
             self.code_dir_blob.serialize(v)
         if self.reqs_blob:
-            self.reqs_blob.serialize(v)
             entry_index.append((REQS_SLOT, v.tell()))
+            self.reqs_blob.serialize(v)
         if self.sig_blob:
-            self.sig_blob.serialize(v)
             entry_index.append((SIG_SLOT, v.tell()))
+            self.sig_blob.serialize(v)
         if self.ent_blob:
-            self.ent_blob.serialize(v)
             entry_index.append((ENT_SLOT, v.tell()))
+            self.ent_blob.serialize(v)
         if self.ent_der_blob:
-            self.ent_der_blob.serialize(v)
             entry_index.append((ENT_DER_SLOT, v.tell()))
+            self.ent_der_blob.serialize(v)
 
-        first_offset = 8 + 8 * len(entry_index)
+        first_offset = 4 + 4 + 4 + 8 * len(entry_index)
         length = first_offset + v.tell()
-        s.write(struct.pack(">2I", self.magic, length))
+        s.write(struct.pack(">3I", self.magic, length, len(entry_index)))
         for e, o in entry_index:
             s.write(struct.pack(">2I", e, o + first_offset))
         s.write(v.getvalue())
