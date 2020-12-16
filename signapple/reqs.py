@@ -5,6 +5,7 @@ from typing import BinaryIO
 
 from .utils import sread
 
+
 # The highest byte of the opcode is flags
 OP_FLAG_MASK = 0xFF000000
 
@@ -21,8 +22,12 @@ class ExprOp(IntEnum):
     OP_CD_HASH = 8  # Match hash of CodeDirectory directly [cd hash]
     OP_NOT = 9  # Logical inverse [expr]
     OP_INFO_KEY_FIELD = 10  # Info.plist key field [string; match suffix]
-    OP_CERT_FIELD = 11  # Certificate field, existence only [cert index; field name; match suffix]
-    OP_TRUSTED_CERT = 12  # Require trust settings to approve one particular cert [cert index]
+    OP_CERT_FIELD = (
+        11  # Certificate field, existence only [cert index; field name; match suffix]
+    )
+    OP_TRUSTED_CERT = (
+        12  # Require trust settings to approve one particular cert [cert index]
+    )
     OP_TRUSTED_CERTS = 13  # Require trust settings to approve the cert chain
     OP_CERT_GENERIC = 14  # Certificate component by OID [cert index; oid; match suffix]
     OP_APPLE_GENERIC_ANCHOR = 15  # Signed by Apple in any capacity
@@ -32,7 +37,9 @@ class ExprOp(IntEnum):
     OP_NAMED_CODE = 19  # Named subrouting
     OP_PLATFORM = 20  # Platform constraint [integer]
     OP_NOTARIZED = 21  # Has a developer id+ ticket
-    OP_CERT_FIELD_DATE = 22  # Extension value as timestamp [cert index; field name; match suffix]
+    OP_CERT_FIELD_DATE = (
+        22  # Extension value as timestamp [cert index; field name; match suffix]
+    )
     OP_LEGACY_DEV_ID = 23  # Meets legacy (pre-notarization required) policy
 
 
@@ -56,7 +63,7 @@ class MatchOP(IntEnum):
 
 
 def _get_op_name(op: ExprOp):
-    op = op & ~OP_FLAG_MASK
+    op = op & ~ExprOp.OP_FLAG_MASK  # type: ignore
     if op == ExprOp.OP_FALSE:
         return "False"
     elif op == ExprOp.OP_TRUE:
@@ -143,6 +150,24 @@ def _get_match_op_name(op):
     else:
         raise Exception(f"Unknown match op code {op}")
 
+
+def _write_num(s: BinaryIO, num: int):
+    s.write(struct.pack(">I", num))
+
+
+def _write_timestamp(s: BinaryIO, timestamp: int):
+    s.write(struct.pack(">Q", timestamp))
+
+
+def _write_var_bytes(s: BinaryIO, arg: bytes):
+    str_len = len(arg)
+
+    s.write(struct.pack(">I", str_len))
+    if str_len % 4 != 0:
+        str_len = ((str_len // 4) + 1) * 4
+    s.write(struct.pack(f"{str_len}s", arg))
+
+
 # Base class for match opcode expressions
 class MatchExpr(object):
     def __init__(self, opcode: MatchOP):
@@ -154,23 +179,34 @@ class MatchExpr(object):
     def __repr__(self):
         return self.__str__()
 
+    def serialize(self, s: BinaryIO):
+        _write_num(s, self.opcode)
+
 
 class ArgMatchExpr(MatchExpr):
-    def __init__(self, opcode: ExprOp, arg: bytes):
+    def __init__(self, opcode: MatchOP, arg: bytes):
         super().__init__(opcode)
         self.arg = arg
 
     def __str__(self):
         return f"{_get_match_op_name(self.opcode)} {self.arg.hex()}"
 
+    def serialize(self, s: BinaryIO):
+        super().serialize(s)
+        _write_var_bytes(s, self.arg)
+
 
 class TimestampMatchExpr(MatchExpr):
-    def __init__(self, opcode: ExprOp, timestamp: int):
+    def __init__(self, opcode: MatchOP, timestamp: int):
         super().__init__(opcode)
         self.timestamp = timestamp
 
     def __str__(self):
         return f"{_get_match_op_name(self.opcode)} {self.timestamp}"
+
+    def serialize(self, s: BinaryIO):
+        super().serialize(s)
+        _write_timestamp(s, self.timestamp)
 
 
 # Base class for opcode expressions. Also for single opcode expressions.
@@ -184,6 +220,9 @@ class Expr(object):
     def __repr__(self):
         return self.__str__()
 
+    def serialize(self, s: BinaryIO):
+        _write_num(s, self.opcode)
+
 
 # Class for "and" and "or" expressions
 class AndOrExpr(Expr):
@@ -195,6 +234,11 @@ class AndOrExpr(Expr):
     def __str__(self):
         return f"({self.left}) {_get_op_name(self.opcode)} ({self.right})"
 
+    def serialize(self, s: BinaryIO):
+        super().serialize(s)
+        self.left.serialize(s)
+        self.right.serialize(s)
+
 
 # Class for opcodes that have a single argument
 class SingleArgExpr(Expr):
@@ -205,6 +249,10 @@ class SingleArgExpr(Expr):
     def __str__(self):
         return f"{_get_op_name(self.opcode)} {self.arg.hex()}"
 
+    def serialize(self, s: BinaryIO):
+        super().serialize(s)
+        _write_var_bytes(s, self.arg)
+
 
 class SingleIntExpr(Expr):
     def __init__(self, opcode: ExprOp, arg: int):
@@ -213,6 +261,10 @@ class SingleIntExpr(Expr):
 
     def __str__(self):
         return f"{_get_op_name(self.opcode)} {self.arg}"
+
+    def serialize(self, s: BinaryIO):
+        super().serialize(s)
+        _write_num(s, self.arg)
 
 
 class InfoKVExpr(Expr):
@@ -224,6 +276,11 @@ class InfoKVExpr(Expr):
     def __str__(self):
         return f"Info.plist key {self.key} has value {self.value}"
 
+    def serialize(self, s: BinaryIO):
+        super().serialize(s)
+        _write_var_bytes(s, self.key)
+        _write_var_bytes(s, self.value)
+
 
 class KeyMatchExpr(Expr):
     def __init__(self, opcode: ExprOp, key: bytes, match: MatchExpr):
@@ -233,6 +290,11 @@ class KeyMatchExpr(Expr):
 
     def __str__(self):
         return f"{_get_op_name(self.opcode)} {self.key} has value {self.value}"
+
+    def serialize(self, s: BinaryIO):
+        super().serialize(s)
+        _write_var_bytes(s, self.key)
+        self.match.serialize(s)
 
 
 class CertificateMatch(Expr):
@@ -245,6 +307,12 @@ class CertificateMatch(Expr):
     def __str__(self):
         return f"{_get_op_name(self.opcode)} ({self.cert_index}, {self.field.hex()}, {self.match})"
 
+    def serialize(self, s: BinaryIO):
+        super().serialize(s)
+        _write_num(s, self.cert_index)
+        _write_var_bytes(s, self.field)
+        self.match.serialize(s)
+
 
 class Requirement(object):
     def __init__(self, expr: Expr):
@@ -255,6 +323,9 @@ class Requirement(object):
 
     def __repr__(self):
         return self.__str__()
+
+    def serialize(self, s):
+        self.expr.serialize(s)
 
 
 def _read_num(s: BinaryIO):
@@ -270,7 +341,7 @@ def _read_timestamp(s: BinaryIO):
 def _read_var_bytes(s: BinaryIO):
     str_len = _read_num(s)
     (data,) = struct.unpack(f"{str_len}s", sread(s, str_len))
-    
+
     # Align to 4 byte multiple
     if str_len % 4 != 0:
         diff = (((str_len // 4) + 1) * 4) - str_len
@@ -302,10 +373,10 @@ def _deserialize_match_expr(s) -> MatchExpr:
             or op == MatchOP.MATCH_BEFORE
             or op == MatchOP.MATCH_AFTER
             or op == MatchOP.MATCH_ON_OR_BEFORE
-            or op == MatchOP.MATCH_ON_op, OR_AFTER
+            or op == MatchOP.MATCH_ON_OR_AFTER,
         ):
             timestamp = _read_timestamp(s)
-            return TimestampMatchExpr(timestamp)
+            return TimestampMatchExpr(op, timestamp)
         else:
             raise Exception(f"Unknown requirement op code {op}")
 
@@ -317,7 +388,7 @@ def _deserialize_expr(s: BinaryIO) -> Expr:
         full_op = _read_num(s)
 
         # Process arguments to each op code
-        op = full_op & ~OP_FLAG_MASK
+        op = full_op & ~OP_FLAG_MASK  # type: ignore
         if (
             op == ExprOp.OP_FALSE
             or op == ExprOp.OP_TRUE
@@ -368,6 +439,7 @@ def _deserialize_expr(s: BinaryIO) -> Expr:
             raise Exception(f"Unknown requirement op code {op}")
 
     raise Exception(f"Unable to parse expression")
+
 
 def deserialize_requirement(s: BinaryIO) -> Requirement:
     return Requirement(_deserialize_expr(s))

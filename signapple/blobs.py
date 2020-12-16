@@ -6,6 +6,7 @@ from enum import IntEnum
 from io import BytesIO, SEEK_CUR
 from typing import BinaryIO, Dict, List, Optional, Tuple
 
+from .reqs import Requirement, deserialize_requirement
 from .utils import get_hash, sread, read_string
 
 
@@ -28,6 +29,15 @@ ALT_CODE_DIR_LIMIT = 0x1005
 SIG_SLOT = 0x10000  # CMS Signature
 ID_SLOT = 0x10001  # Identification blob (detached signatures only)
 TICKET_SLOT = 0x10002  # Ticket embedded in signature (DMG only)
+
+
+# Requirement types
+HOST_REQ_TYPE = 1
+GUEST_REQ_TYPE = 2
+DESIGNATED_REQ_TYPE = 3
+LIBRARY_REQ_TYPE = 4
+PLUGIN_REQ_TYPE = 5
+INVALID_REQ_TYPE = 6
 
 
 class Blob(object):
@@ -445,17 +455,6 @@ class SignatureBlob(Blob):
         self.sig = signer_info["signature"].contents
 
 
-class RequirementsBlob(DataBlob):
-    """
-    We treat these blobs as black boxes. Apple's csreq tool will create these for us.
-    These are SuperBlobs, but we don't really care and just need to put them in the correct
-    place in an EmbeddedSignatureBlob.
-    """
-
-    def __init__(self):
-        super().__init__(0xFADE0C01)
-
-
 class EmbeddedSignatureBlob(SuperBlob):
     def __init__(self):
         super().__init__(0xFADE0CC0)
@@ -516,6 +515,95 @@ class EmbeddedSignatureBlob(SuperBlob):
                 self.ent_der_blob.deserialize(s)
             else:
                 raise Exception(f"Unknown blob entry type {entry_type}")
+
+            s.seek(orig_pos)
+
+
+class RequirementBlob(Blob):
+    def __init__(self, req: Optional[Requirement] = None):
+        super().__init__(0xFADE0C00)
+        self.kind: int = 1
+        self.req: Optional[Requirement] = req
+
+    def serialize(self, s: BinaryIO):
+        assert self.req
+        v = BytesIO()
+        self.req.serialize(v)
+        length = v.tell() + 12
+
+        s.write(struct.pack(">3I", self.magic, length, self.kind))
+        s.write(v.getvalue())
+
+    def deserialize(self, s: BinaryIO):
+        super().deserialize(s)
+        (kind,) = struct.unpack(">I", sread(s, 4))
+        assert kind == self.kind
+        self.req = deserialize_requirement(s)
+
+
+class RequirementsBlob(SuperBlob):
+    def __init__(self):
+        super().__init__(0xFADE0C01)
+        self.host_req: Optional[RequirementBlob] = None
+        self.guest_req: Optional[RequirementBlob] = None
+        self.designated_req: Optional[RequirementBlob] = None
+        self.library_req: Optional[RequirementBlob] = None
+        self.plugin_req: Optional[RequirementBlob] = None
+        self.invalid_req: Optional[RequirementBlob] = None
+
+    def serialize(self, s: BinaryIO):
+        v = BytesIO()
+        entry_index = []
+        if self.host_req:
+            entry_index.append((HOST_REQ_TYPE, v.tell()))
+            self.host_req.serialize(v)
+        if self.guest_req:
+            entry_index.append((GUEST_REQ_TYPE, v.tell()))
+            self.guest_req.serialize(v)
+        if self.designated_req:
+            entry_index.append((DESIGNATED_REQ_TYPE, v.tell()))
+            self.designated_req.serialize(v)
+        if self.library_req:
+            entry_index.append((LIBRARY_REQ_TYPE, v.tell()))
+            self.library_req.serialize(v)
+        if self.plugin_req:
+            entry_index.append((PLUGIN_REQ_TYPE, v.tell()))
+            self.plugin_req.serialize(v)
+        if self.invalid_req:
+            entry_index.append((INVALID_REQ_TYPE, v.tell()))
+            self.invalid_req.serialize(v)
+
+        first_offset = 4 + 4 + 4 + 8 * len(entry_index)
+        length = first_offset + v.tell()
+        s.write(struct.pack(">3I", self.magic, length, len(entry_index)))
+        for e, o in entry_index:
+            s.write(struct.pack(">2I", e, o + first_offset))
+        s.write(v.getvalue())
+
+    def deserialize(self, s: BinaryIO):
+        super().deserialize(s)
+
+        for entry_type, offset in self.entry_index:
+            orig_pos = s.tell()
+            self.seek(s, offset)
+
+            req = RequirementBlob()
+            req.deserialize(s)
+
+            if entry_type == HOST_REQ_TYPE:
+                self.host_req = req
+            elif entry_type == GUEST_REQ_TYPE:
+                self.guest_req = req
+            elif entry_type == DESIGNATED_REQ_TYPE:
+                self.designated_req = req
+            elif entry_type == LIBRARY_REQ_TYPE:
+                self.library_req = req
+            elif entry_type == PLUGIN_REQ_TYPE:
+                self.plugin_req = req
+            elif entry_type == INVALID_REQ_TYPE:
+                self.invalid_req = req
+            else:
+                raise Exception(f"Unknown requirement entry type {entry_type}")
 
             s.seek(orig_pos)
 
