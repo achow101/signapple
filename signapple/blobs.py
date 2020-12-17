@@ -331,35 +331,35 @@ class CodeDirectoryBlob(Blob):
 
 
         # Because I don't know what to do with some of these fields, if we see them being used, throw an error
-        if (
-            any(
-                [
-                    self.scatter_offset,
-                    self.code_limit_64,
-                    self.exec_seg_base,
-                    self.exec_seg_base,
-                    self.exec_seg_limit,
-                    self.exec_seg_flags,
-                    self.runtime,
-                    self.pre_encrypt_offset,
-                ]
-            )
-            is not None
-            and any(
-                [
-                    self.scatter_offset,
-                    self.code_limit_64,
-                    self.exec_seg_base,
-                    self.exec_seg_base,
-                    self.exec_seg_limit,
-                    self.exec_seg_flags,
-                    self.runtime,
-                    self.pre_encrypt_offset,
-                ]
-            )
-            > 0
-        ):
-            raise Exception("Unsupported feature in use")
+        # if (
+        #     any(
+        #         [
+        #             self.scatter_offset,
+        #             self.code_limit_64,
+        #             self.exec_seg_base,
+        #             self.exec_seg_base,
+        #             self.exec_seg_limit,
+        #             self.exec_seg_flags,
+        #             self.runtime,
+        #             self.pre_encrypt_offset,
+        #         ]
+        #     )
+        #     is not None
+        #     and any(
+        #         [
+        #             self.scatter_offset,
+        #             self.code_limit_64,
+        #             self.exec_seg_base,
+        #             self.exec_seg_base,
+        #             self.exec_seg_limit,
+        #             self.exec_seg_flags,
+        #             self.runtime,
+        #             self.pre_encrypt_offset,
+        #         ]
+        #     )
+        #     > 0
+        # ):
+        #     raise Exception("Unsupported feature in use")
 
         # Read code slot hashes
         self.seek(s, self.hash_offset)
