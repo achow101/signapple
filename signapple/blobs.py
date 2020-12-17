@@ -329,7 +329,6 @@ class CodeDirectoryBlob(Blob):
         if self.version >= self.CDVersion.PRE_ENCRYPT:
             self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", sread(s, 8))
 
-
         # Because I don't know what to do with some of these fields, if we see them being used, throw an error
         # if (
         #     any(
@@ -638,7 +637,7 @@ class EntitlementsBlob(Blob):
         super().deserialize(s)
         assert self.length
         data = sread(s, self.length - 8)
-        self.trailing_newline = data[-1] == 0x0a # Newline
+        self.trailing_newline = data[-1] == 0x0A  # Newline
         self.ent = plistlib.loads(data, fmt=plistlib.FMT_XML, dict_type=OrderedDict)
 
 
