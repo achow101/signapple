@@ -40,3 +40,8 @@ def get_hash(data: bytes, hash_type: Optional[int]) -> bytes:
         # This is a sha256 hash truncated to 20 bytes
         return r[:20]
     return r
+
+
+def print_hex(data: bytes):
+    for i in range(0, len(data), 4):
+        print(f"{data[i:i+2].hex()} {data[i+2:i+4].hex()}")
