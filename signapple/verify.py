@@ -127,6 +127,10 @@ def _verify_single(filename: str, h: MachOHeader):
     # Get the offset of the signature from the header
     # It is under the LC_CODE_SIGNATURE command
     sigmeta = [cmd for cmd in h.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
+    if len(sigmeta) == 0:
+        raise Exception("No embedded code signature sections")
+    elif len(sigmeta) > 1:
+        raise Exception("Multiple embedded code signature sections")
     sigmeta = sigmeta[0]
     sig_offset = sigmeta[1].dataoff
 
