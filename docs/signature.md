@@ -365,16 +365,78 @@ TODO: Find ASN.1 for entitlement encoding
 
 The signature itself is a DER encoded message and signature using [RFC 5652 Cryptographic Message Syntax (CMS)](https://tools.ietf.org/html/rfc5652).
 The entire CMS binary data is contained within a `BlobWrapper`.
-The CMS data contains the certificate (and its chain) that was used to sign this binary.
-It also includes the message that was signed.
-For code signatures, the message signed contains a "message_digest" field which contains the hash of the `CodeDirectory`.
-Additionally two Apple specific fields, HashAgilityV1 and HashAgilityV2, contain the same `CodeDirectory` hash.
-The effect is that the signature covers the hash of this message which contains the hash of the `CodeDirectory` which contains the hashes of the binary itself as well as other auxiliary data.
-Thus the code signature covers everything that is distributed to the end user.
 
-The signature also appears to contain a timestamp, so there is likely to be some phoning home involved. This has not yet been investigated.
+The CMS data is a `ContentInfo` with the content type `SignedData`.
+The ASN.1 for this, from RFC 5652:
 
-TODO: Figure out the exact encoding of the final signed message
+```
+ContentInfo ::= SEQUENCE {
+    contentType ContentType,
+    content [0] EXPLICIT ANY DEFINED BY contentType }
+
+ContentType ::= OBJECT IDENTIFIER
+
+SignedData ::= SEQUENCE {
+    version CMSVersion,
+    digestAlgorithms DigestAlgorithmIdentifiers,
+    encapContentInfo EncapsulatedContentInfo,
+    certificates [0] IMPLICIT CertificateSet OPTIONAL,
+    crls [1] IMPLICIT RevocationInfoChoices OPTIONAL,
+    signerInfos SignerInfos }
+
+DigestAlgorithmIdentifiers ::= SET OF DigestAlgorithmIdentifier
+
+SignerInfos ::= SET OF SignerInfo
+
+EncapsulatedContentInfo ::= SEQUENCE {
+    eContentType ContentType,
+    eContent [0] EXPLICIT OCTET STRING OPTIONAL }
+
+SignerInfo ::= SEQUENCE {
+    version CMSVersion,
+    sid SignerIdentifier,
+    digestAlgorithm DigestAlgorithmIdentifier,
+    signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
+    signatureAlgorithm SignatureAlgorithmIdentifier,
+    signature SignatureValue,
+    unsignedAttrs [1] IMPLICIT UnsignedAttributes OPTIONAL }
+
+SignerIdentifier ::= CHOICE {
+    issuerAndSerialNumber IssuerAndSerialNumber,
+    subjectKeyIdentifier [0] SubjectKeyIdentifier }
+
+SignedAttributes ::= SET SIZE (1..MAX) OF Attribute
+
+UnsignedAttributes ::= SET SIZE (1..MAX) OF Attribute
+
+Attribute ::= SEQUENCE {
+    attrType OBJECT IDENTIFIER,
+    attrValues SET OF AttributeValue }
+
+AttributeValue ::= ANY
+
+SignatureValue ::= OCTET STRING
+```
+
+For code signatures, the `encapContentInfo` and `crls` fields are empty.
+`certificates` is populated with the certificate chain for the certificate that is providing the signature.
+Since there is only one signer for a code signature, the `signerInfos` field onlycontains a single `SignerInfo`.
+For `sid`, `issuerAndSerialNumber` is used.
+This `SignerInfo` has both `signedAttrs` and `unsignedAttrs`.
+
+The standard `signedAttrs` used are `content-type` (specifies the type of `encapContentInfo`, which even though is empty, is type `data`), `signing-time`, `message-digest`.
+There are additionally two Apple specific attributes: `AppleCodeSigningHashAgilityV1` and `AppleCodeSigningHashAgilityV2`.
+`HashAgilityV1` is a plist containing a dictionary with a single key `cdhashes`.
+The value of this key is an array with the `CodeDirectory` hashes (can be multiple depending on whether multiple hash algorithms are in use).
+`HashAgilityV2` is a dictionary with the key being the hash type (using the same type values as in `CodeDirectory`'s hash type) and the value as the hash.
+`signedAttrs` is DER encoded and signed by the certificate specified by the `sid`.
+This is the standard signature process specified by the RFC.
+
+Additionally, `unsignedAttrs` contains a `signature-time-stamp-token` attribute.
+This is specified in [RFC 3161](https://tools.ietf.org/html/rfc3161).
+The token is CMS message returned by Apple's Timestamp Authority servers and is directly embedded as an attribute.
+It isn't necessary for us to understand what is in this token.
+In order for this timestamping to work, we will need to send timestamp requests to Apple.
 
 ## Final Layout
 
