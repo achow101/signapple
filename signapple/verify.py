@@ -5,7 +5,7 @@ import os
 from asn1crypto.cms import CMSAttributes  # type: ignore
 from certvalidator.context import ValidationContext  # type: ignore
 from certvalidator import CertificateValidator  # type: ignore
-from macholib.MachO import MachO, MachOHeader # type: ignore
+from macholib.MachO import MachO, MachOHeader  # type: ignore
 from macholib.mach_o import LC_CODE_SIGNATURE  # type: ignore
 from oscrypto import asymmetric  # type: ignore
 from typing import BinaryIO
