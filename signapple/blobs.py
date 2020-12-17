@@ -143,6 +143,7 @@ class CodeDirectoryBlob(Blob):
         self.spare2: Optional[int] = None
         self.scatter_offset: Optional[int] = None
         self.team_id_offset: Optional[int] = None
+        self.spare3: Optional[int] = None
         self.code_limit_64: Optional[int] = None
         self.exec_seg_base: Optional[int] = None
         self.exec_seg_limit: Optional[int] = None
@@ -158,7 +159,7 @@ class CodeDirectoryBlob(Blob):
         if self.version >= self.CDVersion.TEAM_ID:
             length += 4
         if self.version >= self.CDVersion.CODE_LIMIT_64:
-            length += 8
+            length += 12
         if self.version >= self.CDVersion.EXEC_SEG:
             length += 24
         if self.version >= self.CDVersion.PRE_ENCRYPT:
@@ -259,7 +260,7 @@ class CodeDirectoryBlob(Blob):
         if self.version >= self.CDVersion.TEAM_ID:
             s.write(struct.pack(">I", offsets["team_id"]))
         if self.version >= self.CDVersion.CODE_LIMIT_64:
-            s.write(struct.pack(">Q", self.code_limit_64))
+            s.write(struct.pack(">IQ", self.spare3, self.code_limit_64))
         if self.version >= self.CDVersion.EXEC_SEG:
             s.write(
                 struct.pack(
@@ -318,7 +319,7 @@ class CodeDirectoryBlob(Blob):
         if self.version >= self.CDVersion.TEAM_ID:
             self.team_id_offset = struct.unpack(">I", sread(s, 4))[0]
         if self.version >= self.CDVersion.CODE_LIMIT_64:
-            self.code_limit_64 = struct.unpack(">Q", sread(s, 8))[0]
+            self.spare3, self.code_limit_64 = struct.unpack(">IQ", sread(s, 12))
         if self.version >= self.CDVersion.EXEC_SEG:
             (
                 self.exec_seg_base,
@@ -326,7 +327,8 @@ class CodeDirectoryBlob(Blob):
                 self.exec_seg_flags,
             ) = struct.unpack(">3Q", sread(s, 24))
         if self.version >= self.CDVersion.PRE_ENCRYPT:
-            self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", sread(s, 16))
+            self.runtime, self.pre_encrypt_offset = struct.unpack(">2I", sread(s, 8))
+
 
         # Because I don't know what to do with some of these fields, if we see them being used, throw an error
         if (
