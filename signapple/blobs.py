@@ -619,14 +619,17 @@ class EntitlementsBlob(Blob):
     def __init__(self, ent: Optional[Entitlements] = None):
         super().__init__(0xFADE7171)
         self.ent: Optional[Entitlements] = ent
+        self.trailing_newline: bool = True
 
     def serialize(self, s: BinaryIO):
         assert self.ent
-        import pprint
-        pprint.pprint(self.ent)
         v = BytesIO()
         plistlib.dump(self.ent, v, fmt=plistlib.FMT_XML, sort_keys=False)
-        ent_data = v.getvalue()[:-1] # We need to drop the last byte because that's a newline not present in codesign's result
+
+        # Sometimes entitlements don't contain a trailing newline
+        ent_data = v.getvalue()
+        if not self.trailing_newline:
+            ent_data = ent_data[:-1]
         length = 8 + len(ent_data)
         s.write(struct.pack(">2I", self.magic, length))
         s.write(ent_data)
@@ -635,6 +638,7 @@ class EntitlementsBlob(Blob):
         super().deserialize(s)
         assert self.length
         data = sread(s, self.length - 8)
+        self.trailing_newline = data[-1] == 0x0a # Newline
         self.ent = plistlib.loads(data, fmt=plistlib.FMT_XML, dict_type=OrderedDict)
 
 
