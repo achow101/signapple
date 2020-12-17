@@ -190,7 +190,7 @@ The current slot numbers are:
 
 1. `cdInfoSlot`: Hash of the `<app_name>.app/Contents/Info.plist` file.
 2. `cdRequirementsSlot`: Hash of the Internal Requirements blob. See [below](#Internal-Requirements)
-3. `cdResourceDirSlot`: Hash of the `<app_name>.app/Contents/_CodeSignature/CodeResources` file. This file is a plist file generated during code signing and it contains the hashes of resources not part of the executable. TODO: Figure out how to generate this file.
+3. `cdResourceDirSlot`: Hash of the `<app_name>.app/Contents/_CodeSignature/CodeResources` file. This file is a plist file generated during code signing and it contains the hashes of resources not part of the executable.
 4. `cdTopDirectorySlot`: Apple source code says "Application specific slot". Actual use is unknown. Unsupported by `signapple`.
 5. `cdEntitlementSlot`: Hash of the embedded entitlements configuration.
 6. `cdRepSpecificSlot`: Apple source code says "for use by disk rep". Actual use is unknown. Unsupported by `signapple`.
@@ -437,6 +437,25 @@ This is specified in [RFC 3161](https://tools.ietf.org/html/rfc3161).
 The token is CMS message returned by Apple's Timestamp Authority servers and is directly embedded as an attribute.
 It isn't necessary for us to understand what is in this token.
 In order for this timestamping to work, we will need to send timestamp requests to Apple.
+
+### `_CodeSignature/CodeResources`
+
+The file at `_CodeSignature/CodeResources` is a plist file containing a dictionary with 4 keys: `files`, `files2`, `rules`, and `rules2`.
+`files` and `rules` are legacy things which are required for backwards compatibility.
+`files2` and `rules2` are the current version of `files` and `rules`.
+
+`rules` and `rules2` are dictionaries where the key is a regular expression, and the value is either a boolean or another dictionary.
+The dictionary for each rule indicates whether files matching the key's regex should be included, ommitted, or optional.
+There is also a weight for tiebreaking when multiple rules match for a given path; the rule with the higher weight is chosen.
+These rules can be embedded in some place somehow, but for now, `signapple` just uses the defaults found in `OSX/libsecurity_codesigning/lib/bundlediskrep.cpp`
+
+`files` is a dictionary where the key is a file path, and the value is the SHA-1 hash of that file.
+The file paths are relative to the `Contents/` directory.
+
+`files2` is a dictionary where the key is a file path, and the value is a dictionary.
+The value dictionary has a key of a hash name of the form `hash<n>` where `<n>` is the number for the hash type as found in `CodeDirectory`.
+The exception is for SHA-1 (type 1) which is just named `hash`.
+The value is then the hash encoded.
 
 ## Final Layout
 
