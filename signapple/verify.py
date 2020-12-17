@@ -5,6 +5,7 @@ import os
 from asn1crypto.cms import CMSAttributes  # type: ignore
 from certvalidator.context import ValidationContext  # type: ignore
 from certvalidator import CertificateValidator  # type: ignore
+from macholib.MachO import MachO, MachOHeader # type: ignore
 from macholib.mach_o import LC_CODE_SIGNATURE  # type: ignore
 from oscrypto import asymmetric  # type: ignore
 from typing import BinaryIO
@@ -45,12 +46,14 @@ def _validate_code_hashes(s: BinaryIO, cd_blob: CodeDirectoryBlob):
     assert cd_blob.hash_type
     assert cd_blob.code_limit
     page_size = 2 ** cd_blob.page_size
+    read = 0
     for slot_hash in cd_blob.code_hashes:
         to_read = page_size
-        if s.tell() + page_size >= cd_blob.code_limit:
-            to_read = cd_blob.code_limit - s.tell()
+        if read + page_size >= cd_blob.code_limit:
+            to_read = cd_blob.code_limit - read
 
         this_hash = get_hash(sread(s, to_read), cd_blob.hash_type)
+        read += to_read
         if slot_hash != this_hash:
             raise Exception(
                 f"Code slot hash mismatch. Expected {slot_hash.hex()}, Calculated {this_hash.hex()}"
@@ -120,24 +123,23 @@ def _validate_cms_signature(sig_blob: SignatureBlob, cd_hash: bytes):
     )
 
 
-def verify_mach_o_signature(filename: str):
-    # Open the Mach-O binary and find the LC_CODE_SIGNATURE section
-    m = macholib.MachO.MachO(filename)
-    h = m.headers[0]
-
+def _verify_single(filename: str, h: MachOHeader):
+    # Get the offset of the signature from the header
+    # It is under the LC_CODE_SIGNATURE command
     sigmeta = [cmd for cmd in h.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
     sigmeta = sigmeta[0]
     sig_offset = sigmeta[1].dataoff
 
     with open(filename, "rb") as f:
-        f.seek(sig_offset)
+        # We need to account for the offset of the start of the binary itself because of Universal binaries
+        f.seek(sig_offset + h.offset)
         sig_superblob = EmbeddedSignatureBlob()
         sig_superblob.deserialize(f)
 
         assert sig_superblob.code_dir_blob
         assert sig_superblob.sig_blob
 
-        f.seek(0)
+        f.seek(h.offset)
         _validate_code_hashes(f, sig_superblob.code_dir_blob)
 
     assert sig_superblob.code_dir_blob.hash_type
@@ -193,3 +195,13 @@ def verify_mach_o_signature(filename: str):
         sig_superblob.sig_blob,
         sig_superblob.code_dir_blob.get_hash(sig_superblob.code_dir_blob.hash_type),
     )
+
+
+def verify_mach_o_signature(filename: str):
+    m = macholib.MachO.MachO(filename)
+
+    # There may be multiple headers because it might be a universal binary
+    # In that case, each architecture is essentially just another MachO binary inside of the
+    # universal binary. So we verify the signature for each one.
+    for header in m.headers:
+        _verify_single(filename, header)
