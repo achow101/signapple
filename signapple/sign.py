@@ -3,15 +3,23 @@ import os
 import plistlib
 import re
 
-from asn1crypto.algos import DigestAlgorithmId, SignedDigestAlgorithmId  # type: ignore
-from asn1crypto.core import ObjectIdentifier, OctetString, Sequence, SetOf, UTCTime  # type: ignore
-from asn1crypto.cms import CMSAttribute, CMSAttributes, CMSAttributeType, ContentInfo, ContentType, SetOfAny  # type: ignore
-from asn1crypto.x509 import Certificate  # type: ignore
-from asn1crypto.keys import PrivateKeyInfo  # type: ignore
+from asn1crypto.algos import DigestAlgorithmId, SignedDigestAlgorithmId
+from asn1crypto.core import ObjectIdentifier, OctetString, Sequence, SetOf, UTCTime
+from asn1crypto.cms import (
+    CMSAttribute,
+    CMSAttributes,
+    CMSAttributeType,
+    ContentInfo,
+    ContentType,
+    IssuerAndSerialNumber,
+    SetOfAny,
+)
+from asn1crypto.x509 import Certificate
+from asn1crypto.keys import PrivateKeyInfo
 from collections import OrderedDict
 from datetime import datetime, timezone
-from macholib.MachO import MachO  # type: ignore
-from macholib.mach_o import LC_CODE_SIGNATURE, linkedit_data_command  # type: ignore
+from macholib.MachO import MachO
+from macholib.mach_o import LC_CODE_SIGNATURE, linkedit_data_command
 from typing import Any, Dict, List, Optional, Tuple
 
 from .blobs import (

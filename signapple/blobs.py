@@ -1,8 +1,8 @@
 import plistlib
 import struct
 
-from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes  # type: ignore
-from asn1crypto.x509 import Certificate  # type: ignore
+from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes
+from asn1crypto.x509 import Certificate
 from collections import OrderedDict
 from enum import IntEnum
 from io import BytesIO, SEEK_CUR

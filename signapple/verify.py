@@ -1,13 +1,13 @@
 import io
-import macholib  # type: ignore
+import macholib
 import os
 
-from asn1crypto.cms import CMSAttributes  # type: ignore
-from certvalidator.context import ValidationContext  # type: ignore
-from certvalidator import CertificateValidator  # type: ignore
-from macholib.MachO import MachO, MachOHeader  # type: ignore
-from macholib.mach_o import LC_CODE_SIGNATURE  # type: ignore
-from oscrypto import asymmetric  # type: ignore
+from asn1crypto.cms import CMSAttributes
+from certvalidator.context import ValidationContext
+from certvalidator import CertificateValidator
+from macholib.MachO import MachO, MachOHeader
+from macholib.mach_o import LC_CODE_SIGNATURE
+from oscrypto import asymmetric
 from typing import BinaryIO
 
 from .blobs import (
