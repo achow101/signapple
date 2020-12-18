@@ -52,7 +52,7 @@ def hash_file(filename: str, hash_type: Optional[int]) -> bytes:
         return get_hash(f.read(), hash_type)
 
 
-def round(n: int, i: int) -> int:
+def round_up(n: int, i: int) -> int:
     if n % i == 0:
         return n
     return ((n // i) + 1) * i
