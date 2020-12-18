@@ -113,6 +113,8 @@ class CodeDirectoryBlob(Blob):
         EXEC_SEG = 0x20400
         PRE_ENCRYPT = 0x20500
 
+        LATEST = PRE_ENCRYPT
+
     def __init__(self):
         super().__init__(0xFADE0C02)
 

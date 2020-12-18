@@ -50,3 +50,9 @@ def print_hex(data: bytes):
 def hash_file(filename: str, hash_type: Optional[int]) -> bytes:
     with open(filename, "rb") as f:
         return get_hash(f.read(), hash_type)
+
+
+def round(n: int, i: int) -> int:
+    if n % i == 0:
+        return n
+    return ((n // i) + 1) * i
