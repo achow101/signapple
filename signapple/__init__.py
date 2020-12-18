@@ -2,11 +2,17 @@ import argparse
 
 
 from .verify import verify_mach_o_signature
+from .sign import sign_mach_o
 
 
 def verify(args):
     verify_mach_o_signature(args.filename)
     print("Code signature is valid")
+
+
+def sign(args):
+    sign_mach_o(args.filename, args.keypath, args.passphrase)
+    print("Code signature created")
 
 
 def main():
@@ -21,6 +27,23 @@ def main():
     )
     verify_subparser.add_argument("filename", help="Path to the binary to verify")
     verify_subparser.set_defaults(func=verify)
+
+    sign_subparser = subparsers.add_parser(
+        "sign", help="Create a code signature for a binary"
+    )
+    sign_subparser.add_argument(
+        "filename", help="Path to the binary to sign. It will be modified in place"
+    )
+    sign_subparser.add_argument(
+        "keypath",
+        help="Path to the PKCS#12 archive containing the certificate and private key to sign with",
+    )
+    sign_subparser.add_argument(
+        "--passphrase",
+        "-p",
+        help="The passphrase protecting the private key. If not specified, you will be prompted to enter it later",
+    )
+    sign_subparser.set_defaults(func=sign)
 
     args = parser.parse_args()
     args.func(args)

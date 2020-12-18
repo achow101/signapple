@@ -1,3 +1,4 @@
+import getpass
 import glob
 import os
 import plistlib
@@ -643,3 +644,21 @@ class CodeSigner(object):
         # Make the final signatures and add it to the binaries
         for cs in code_signers:
             cs.make_signature()
+
+
+def sign_mach_o(filename: str, p12_path: str, passphrase: Optional[str] = None):
+    """
+    Code sign a Mach-O binary in place
+    """
+    abs_path = os.path.abspath(filename)
+
+    if passphrase is None:
+        passphrase = getpass.getpass(f"Enter the passphrase for {p12_path}: ")
+
+    # Load cert and privkey
+    with open(p12_path, "rb") as f:
+        privkey, cert, _ = parse_pkcs12(f.read(), passphrase)
+
+    # Sign
+    cs = CodeSigner(abs_path, cert, privkey)
+    cs.make_signature()
