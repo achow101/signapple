@@ -70,7 +70,7 @@ HASH_AGILITY_V2_OID = CMSAttributeType("1.2.840.113635.100.9.2")
 
 PAGE_SIZES = {
     0x01000007: 0x1000,  # AMD64
-    0x01000012: 0x4000,  # ARM64
+    0x0100000C: 0x4000,  # ARM64
 }
 
 # Lookup table for the Log2 page size that is put in the CodeDirectory
@@ -373,8 +373,11 @@ class SingleCodeSigner(object):
         build_meta = [
             cmd for cmd in self.macho_header.commands if cmd[0].cmd == LC_BUILD_VERSION
         ]
-        assert len(build_meta) == 1
-        platform = build_meta[0][1].platform
+        if len(build_meta) == 0:
+            platform = 0
+        else:
+            assert len(build_meta) == 1
+            platform = build_meta[0][1].platform
 
         self.sig.code_dir_blob = CodeDirectoryBlob()
 
@@ -695,7 +698,7 @@ class CodeSigner(object):
         args = [alloc_tool, "-i", self.filename, "-o", self.filename]
         for a, s in arch_sizes.items():
             args.append("-a")
-            args.append(CPU_TYPE_NAMES[a])
+            args.append(CPU_TYPE_NAMES[a].lower())
             size = round_up(s, 16)  # codesign_allocate requires a multiple of 16
             args.append(str(size))
 
