@@ -240,6 +240,7 @@ def get_timestamp_token(digest: bytes, hash_type: int):
         {
             "version": Version(1),
             "message_imprint": imprint,
+            "cert_req": True,
         }
     )
 
