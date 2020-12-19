@@ -437,6 +437,7 @@ This is specified in [RFC 3161](https://tools.ietf.org/html/rfc3161).
 The token is CMS message returned by Apple's Timestamp Authority servers and is directly embedded as an attribute.
 It isn't necessary for us to understand what is in this token.
 In order for this timestamping to work, we will need to send timestamp requests to Apple.
+In the timestamp request, we send the hash of the signature field.
 
 ### `_CodeSignature/CodeResources`
 

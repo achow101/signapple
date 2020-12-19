@@ -4,6 +4,7 @@ import os
 import plistlib
 import subprocess
 import re
+import requests
 
 from asn1crypto.algos import DigestAlgorithmId, SignedDigestAlgorithmId
 from asn1crypto.core import ObjectIdentifier, OctetString, Sequence, SetOf, UTCTime
@@ -22,6 +23,7 @@ from asn1crypto.cms import (
     SignerIdentifier,
     SignerInfo,
 )
+from asn1crypto.tsp import MessageImprint, TimeStampReq, TimeStampResp, Version
 from asn1crypto.x509 import Certificate
 from asn1crypto.keys import PrivateKeyInfo
 from collections import OrderedDict
@@ -76,6 +78,9 @@ CODE_DIR_PAGE_SIZES = {
     0x1000: 12,
     0x4000: 14,
 }
+
+
+TIMESTAMP_SERVER = "http://timestamp.apple.com/ts01"
 
 
 class HashAgility(Sequence):
@@ -222,6 +227,29 @@ def make_cms(
     return ContentInfo(
         {"content_type": ContentType.unmap("signed_data"), "content": signed_data}
     )
+
+
+def get_timestamp_token(digest: bytes, hash_type: int):
+    # Create a TimestampRequest
+    dg_algo = DigestAlgorithm({"algorithm": _get_digest_algo(hash_type)})
+    imprint = MessageImprint(
+        {"hash_algorithm": dg_algo, "hashed_message": OctetString(digest)}
+    )
+
+    tsreq = TimeStampReq(
+        {
+            "version": Version(1),
+            "message_imprint": imprint,
+        }
+    )
+
+    # Send tsreq to the server
+    headers = {"Content-Type": "application/timestamp-query"}
+    resp = requests.post(TIMESTAMP_SERVER, data=tsreq.dump(), headers=headers)
+    resp.raise_for_status()
+    tsresp = TimeStampResp.load(resp.content)
+
+    return tsresp["time_stamp_token"]
 
 
 class SingleCodeSigner(object):
@@ -398,7 +426,9 @@ class SingleCodeSigner(object):
         seg_maxes = []
         for cmd in self.macho_header.commands:
             meta = cmd[1]
-            if isinstance(meta, segment_command_64) or isinstance(meta, segment_command):
+            if isinstance(meta, segment_command_64) or isinstance(
+                meta, segment_command
+            ):
                 seg_maxes.append(meta.fileoff + meta.filesize)
         return round_up(max(seg_maxes), 16)
 
@@ -424,7 +454,21 @@ class SingleCodeSigner(object):
         signature = rsa_pkcs1v15_sign(
             actual_privkey, signed_attrs.dump(), self.hash_type_str
         )
-        cms = make_cms(self.cert, self.hash_type, signed_attrs, signature, None)
+
+        # Get the timestamp from Apple
+        digest = get_hash(signature, self.hash_type)
+        tst = CMSAttribute(
+            {
+                "type": CMSAttributeType("signature_time_stamp_token"),
+                "values": [get_timestamp_token(digest, self.hash_type)],
+            }
+        )
+
+        # Make the CMS
+        cms = make_cms(
+            self.cert, self.hash_type, signed_attrs, signature, CMSAttributes([tst])
+        )
+
         self.sig.sig_blob = SignatureBlob()
         self.sig.sig_blob.cms_data = cms.dump()
 
