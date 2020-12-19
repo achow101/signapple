@@ -259,7 +259,7 @@ class SingleCodeSigner(object):
         self.sig = EmbeddedSignatureBlob()
         self.sig.reqs_blob = RequirementsBlob()
 
-        self.sigmeta: Optional[Tuple[int, linkedit_data_command, bytes]] = None
+        self.sigmeta: Tuple[int, linkedit_data_command, bytes] = self._get_sigmeta()
 
     def _set_info_hash(self):
         self.sig.code_dir_blob.info_hash = hash_file(
@@ -319,12 +319,12 @@ class SingleCodeSigner(object):
 
         with open(self.filename, "rb") as f:
             f.seek(self.macho_header.offset)
-            num_hashes = round_up(self.macho_header.total_size, self.page_size)
+            num_hashes = round_up(self.sigmeta.dataoff, self.page_size) // self.page_size
             read = 0
             for i in range(num_hashes):
                 to_read = self.page_size
-                if read + to_read > self.macho_header.total_size:
-                    to_read = self.macho_header.total_size - read
+                if read + to_read > self.sigmeta.dataoff:
+                    to_read = self.sigmeta.dataoff - read
 
                 data = f.read(to_read)
                 read += to_read
@@ -349,7 +349,7 @@ class SingleCodeSigner(object):
 
         self.sig.code_dir_blob.version = CodeDirectoryBlob.CDVersion.LATEST
         self.sig.code_dir_blob.flags = 0
-        self.sig.code_dir_blob.code_limit = self.macho_header.total_size
+        self.sig.code_dir_blob.code_limit = self.sigmeta.dataoff
         self.sig.code_dir_blob.hash_size = len(get_hash(b"", self.hash_type))
         self.sig.code_dir_blob.hash_type = self.hash_type
         self.sig.code_dir_blob.platform = platform
@@ -384,21 +384,23 @@ class SingleCodeSigner(object):
         self.sig.serialize(v)
         return len(v.getvalue()) + 18000  # Apple uses 18000 for the CMS sig estimate
 
-    def _refresh_macho_header(self):
-        macho = MachO(self.filename)
-        self.macho_header = macho.headers[self.macho_index]
+    def _get_sigmeta(self):
         sig_cmds = [
             cmd for cmd in self.macho_header.commands if cmd[0].cmd == LC_CODE_SIGNATURE
         ]
         assert len(sig_cmds) == 1
-        self.sigmeta = sig_cmds[0]
+        return sig_cmds[0][1]
+
+    def _refresh_macho_header(self):
+        macho = MachO(self.filename)
+        self.macho_header = macho.headers[self.macho_index]
+        self.sigmeta = self._get_sigmeta()
 
     def make_signature(self):
         assert self.sig.code_dir_blob
 
         # Refresh our MachOHeader
         self._refresh_macho_header()
-        assert self.sigmeta
 
         # Redo the code hashes
         self._set_code_hashes()
@@ -416,7 +418,7 @@ class SingleCodeSigner(object):
         self.sig.sig_blob.cms_data = cms.dump()
 
         # Attach the signature to the MachO binary
-        offset = self.macho_header.offset + self.sigmeta[1].dataoff
+        offset = self.macho_header.offset + self.sigmeta.dataoff
         with open(self.filename, "rb+") as f:
             f.seek(offset)
             self.sig.serialize(f)
