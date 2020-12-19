@@ -1,11 +1,11 @@
 import plistlib
 import struct
 
-from asn1crypto.cms import ContentInfo, SignedData, CMSAttributes
-from asn1crypto.x509 import Certificate
+from asn1crypto.cms import ContentInfo
 from collections import OrderedDict
 from enum import IntEnum
 from io import BytesIO, SEEK_CUR
+from pprint import pformat
 from typing import Any, BinaryIO, Dict, List, Optional, Tuple
 
 from .reqs import Requirement, deserialize_requirement
@@ -449,48 +449,26 @@ class SignatureBlob(Blob):
 
     def __init__(self):
         super().__init__(0xFADE0B01)
-        self.cms_data: Optional[bytes] = None
-        self.cert_chain: List[Certificate] = []
-        self.signed_attr: Optional[CMSAttributes] = None
-        self.digest_alg: Optional[str] = None
-        self.sig_alg: Optioanl[str] = None
-        self.sig: Optiona[bytes] = None
+        self.cms: Optional[ContentInfo] = None
 
     def __str__(self):
-        return f"SignatureBlob: {self.cms_data.hex()}"
+        return f"SignatureBlob: {pformat(self.cms.native, indent=1, width=250, sort_dicts=False)}"
 
     def serialize(self, s: BinaryIO):
-        assert self.cms_data
-        length = len(self.cms_data) + 8
+        assert self.cms
+        data = self.cms.dump()
+        length = len(data) + 8
         s.write(struct.pack(">2I", self.magic, length))
-        s.write(self.cms_data)
+        s.write(data)
 
     def deserialize(self, s: BinaryIO):
         super().deserialize(s)
         assert self.magic
         assert self.length
         to_read = self.length - 8
-        self.cms_data = sread(s, to_read)
+        cms_data = sread(s, to_read)
 
-        content = ContentInfo.load(self.cms_data)
-        signed_data = content["content"]
-        assert isinstance(signed_data, SignedData)
-        assert len(signed_data["signer_infos"]) == 1
-
-        # Parse certificates
-        for cert in signed_data["certificates"]:
-            c = cert.chosen
-            assert isinstance(c, Certificate)
-            self.cert_chain.append(c)
-
-        # Parse algorithms used
-        signer_info = signed_data["signer_infos"][0]
-        self.digest_alg = signer_info["digest_algorithm"]["algorithm"].native
-        self.sig_alg = signer_info["signature_algorithm"]["algorithm"].native
-
-        # Parse message and signature
-        self.signed_attrs = signer_info["signed_attrs"]
-        self.sig = signer_info["signature"].contents
+        self.cms = ContentInfo.load(cms_data)
 
 
 class EmbeddedSignatureBlob(SuperBlob):

@@ -2,7 +2,8 @@ import io
 import macholib
 import os
 
-from asn1crypto.cms import CMSAttributes
+from asn1crypto.cms import CMSAttributes, SignedData
+from asn1crypto.x509 import Certificate
 from certvalidator.context import ValidationContext
 from certvalidator import CertificateValidator
 from macholib.MachO import MachO, MachOHeader
@@ -88,9 +89,29 @@ def _sort_attributes(attrs_in: CMSAttributes) -> CMSAttributes:
 
 
 def _validate_cms_signature(sig_blob: SignatureBlob, cd_hash: bytes):
+    signed_data = sig_blob.cms["content"]
+    assert isinstance(signed_data, SignedData)
+    assert len(signed_data["signer_infos"]) == 1
+
+    # Get certificates
+    cert_chain = []
+    for cert in signed_data["certificates"]:
+        c = cert.chosen
+        assert isinstance(c, Certificate)
+        cert_chain.append(c)
+
+    # Get algorithms used
+    signer_info = signed_data["signer_infos"][0]
+    digest_alg = signer_info["digest_algorithm"]["algorithm"].native
+    sig_alg = signer_info["signature_algorithm"]["algorithm"].native
+
+    # Get message and signature
+    signed_attrs = signer_info["signed_attrs"]
+    sig = signer_info["signature"].contents
+
     # Check the hash of CodeDirectory matches what is in the signature
     message_digest = None
-    for attr in sig_blob.signed_attrs:
+    for attr in sig_blob.cms["content"]["signer_infos"][0]["signed_attrs"]:
         if attr["type"].native == "message_digest":
             message_digest = attr["values"][0].native
             if message_digest != cd_hash:
@@ -107,16 +128,14 @@ def _validate_cms_signature(sig_blob: SignatureBlob, cd_hash: bytes):
         additional_critical_extensions=APPLE_CERT_CRIT_EXTS,
     )
     validator = CertificateValidator(
-        sig_blob.cert_chain[-1], sig_blob.cert_chain[0:-1], validation_context
+        cert_chain[-1], cert_chain[0:-1], validation_context
     )
     validator.validate_usage({"digital_signature"}, {"code_signing"})
 
     # Check the signature
-    pubkey = asymmetric.load_public_key(sig_blob.cert_chain[-1].public_key)
-    signed_msg = _sort_attributes(sig_blob.signed_attrs).dump()
-    asymmetric.rsa_pkcs1v15_verify(
-        pubkey, sig_blob.sig, signed_msg, sig_blob.digest_alg
-    )
+    pubkey = asymmetric.load_public_key(cert_chain[-1].public_key)
+    signed_msg = _sort_attributes(signed_attrs).dump()
+    asymmetric.rsa_pkcs1v15_verify(pubkey, sig, signed_msg, digest_alg)
 
 
 def _verify_single(filename: str, h: MachOHeader):

@@ -465,12 +465,10 @@ class SingleCodeSigner(object):
         )
 
         # Make the CMS
-        cms = make_cms(
+        self.sig.sig_blob = SignatureBlob()
+        self.sig.sig_blob.cms = make_cms(
             self.cert, self.hash_type, signed_attrs, signature, CMSAttributes([tst])
         )
-
-        self.sig.sig_blob = SignatureBlob()
-        self.sig.sig_blob.cms_data = cms.dump()
 
         # Attach the signature to the MachO binary
         offset = self.macho_header.offset + self.sig_offset
