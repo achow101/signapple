@@ -177,7 +177,7 @@ class CodeDirectoryBlob(Blob):
         if self.version >= self.CDVersion.TEAM_ID:
             assert self.team_id
             team_id_offset = length
-            assert self.team_id_offset == team_id_offset
+            assert self.team_id_offset is None or self.team_id_offset == team_id_offset
             offsets["team_id"] = team_id_offset
             length += len(self.team_id) + 1
 
@@ -443,6 +443,9 @@ class SignatureBlob(Blob):
         signed_data = content["content"]
         assert isinstance(signed_data, SignedData)
         assert len(signed_data["signer_infos"]) == 1
+
+        import pprint
+        pprint.pprint(content.native, width=250)
 
         # Parse certificates
         for cert in signed_data["certificates"]:

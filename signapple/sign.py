@@ -14,9 +14,11 @@ from asn1crypto.cms import (
     CMSVersion,
     ContentInfo,
     ContentType,
+    DigestAlgorithm,
     IssuerAndSerialNumber,
     SetOfAny,
     SignedData,
+    SignedDigestAlgorithm,
     SignerIdentifier,
     SignerInfo,
 )
@@ -24,9 +26,17 @@ from asn1crypto.x509 import Certificate
 from asn1crypto.keys import PrivateKeyInfo
 from collections import OrderedDict
 from datetime import datetime, timezone
+from io import BytesIO
 from macholib.MachO import MachO, MachOHeader
-from macholib.mach_o import CPU_TYPE_NAMES, LC_CODE_SIGNATURE, linkedit_data_command
-from oscrypto import asymmetric
+from macholib.mach_o import (
+    CPU_TYPE_NAMES,
+    LC_BUILD_VERSION,
+    LC_CODE_SIGNATURE,
+    linkedit_data_command,
+)
+from math import log2
+from oscrypto.asymmetric import load_private_key, rsa_pkcs1v15_sign
+from oscrypto.keys import parse_pkcs12, parse_private
 from typing import Any, Dict, List, Optional, Tuple
 
 from .blobs import (
@@ -57,6 +67,12 @@ HASH_AGILITY_V2_OID = CMSAttributeType("1.2.840.113635.100.9.2")
 PAGE_SIZES = {
     0x01000007: 0x1000,  # AMD64
     0x01000012: 0x4000,  # ARM64
+}
+
+# Lookup table for the Log2 page size that is put in the CodeDirectory
+CODE_DIR_PAGE_SIZES = {
+    0x1000: 12,
+    0x4000: 14,
 }
 
 
@@ -161,21 +177,30 @@ def make_cms(
     sig: bytes,
     unsigned_attrs: Optional[CMSAttributes],
 ) -> ContentInfo:
-    iss_ser = IssuerAndSerialNumber(cert.native["issuer"], cert.native["serial_number"])
-    sid = SignerIdentifier("issuer_and_serial_number", iss_ser)
+    sid = SignerIdentifier(
+        "issuer_and_serial_number",
+        IssuerAndSerialNumber(
+            {
+                "issuer": cert["tbs_certificate"]["issuer"],
+                "serial_number": cert["tbs_certificate"]["serial_number"],
+            }
+        ),
+    )
 
-    dg_algo = _get_digest_algo(hash_type)
+    dg_algo = DigestAlgorithm({"algorithm": _get_digest_algo(hash_type)})
 
-    sig_algo = SignedDigestAlgorithmId.unmap("rsassa_pkcs1v15")
+    sig_algo = SignedDigestAlgorithm(
+        {"algorithm": SignedDigestAlgorithmId("rsassa_pkcs1v15")}
+    )
 
     sig_info = SignerInfo(
         {
-            "version": CMSVersion.unmap("v1"),
+            "version": CMSVersion(1),
             "sid": sid,
             "digest_algorithm": dg_algo,
             "signed_attrs": signed_attrs,
             "signature_algorithm": sig_algo,
-            "signature": sig,
+            "signature": OctetString(sig),
             "unsigned_attrs": unsigned_attrs,
         }
     )
@@ -184,9 +209,9 @@ def make_cms(
 
     signed_data = SignedData(
         {
-            "version": CMSVersion.unmap("v1"),
+            "version": CMSVersion(1),
             "digest_algorithms": [dg_algo],
-            "enap_content_info": None,
+            "encap_content_info": ContentInfo({"content_type": ContentType("data")}),
             "certificates": certs,
             "signer_infos": [sig_info],
         }
@@ -244,7 +269,7 @@ class SingleCodeSigner(object):
     def _set_requirements(self):
         assert self.sig.reqs_blob
         assert self.sig.code_dir_blob
-        if reqs_path is None:
+        if self.reqs_path is None:
             # Make default requirements set:
             # designated => identifier "<ident>" and anchor apple generic and leaf[subject.OU] = "<OU>"
             #
@@ -257,14 +282,14 @@ class SingleCodeSigner(object):
                     ExprOp.OP_AND,
                     AndOrExpr(
                         ExprOp.OP_AND,
-                        SingleArgExpr(ExprOp.OP_IDENT, self.ident),
+                        SingleArgExpr(ExprOp.OP_IDENT, self.ident.encode()),
                         Expr(ExprOp.OP_APPLE_GENERIC_ANCHOR),
                     ),
                     CertificateMatch(
                         ExprOp.OP_CERT_FIELD,
                         0,
                         b"subject.OU",
-                        ArgMatchExpr(MatchOP.MATCH_EQUAL, self.team_id),
+                        ArgMatchExpr(MatchOP.MATCH_EQUAL, self.team_id.encode()),
                     ),
                 )
             )
@@ -317,7 +342,7 @@ class SingleCodeSigner(object):
         build_meta = [
             cmd for cmd in self.macho_header.commands if cmd[0].cmd == LC_BUILD_VERSION
         ]
-        assert len(build_meta) == 0
+        assert len(build_meta) == 1
         platform = build_meta[0][1].platform
 
         self.sig.code_dir_blob = CodeDirectoryBlob()
@@ -328,19 +353,19 @@ class SingleCodeSigner(object):
         self.sig.code_dir_blob.hash_size = len(get_hash(b"", self.hash_type))
         self.sig.code_dir_blob.hash_type = self.hash_type
         self.sig.code_dir_blob.platform = platform
-        self.sig.code_dir_blob.page_size = self.page_size
+        self.sig.code_dir_blob.page_size = CODE_DIR_PAGE_SIZES[self.page_size]
         self.sig.code_dir_blob.spare2 = 0
         self.sig.code_dir_blob.scatter_offset = 0
         self.sig.code_dir_blob.spare3 = 0
         self.sig.code_dir_blob.code_limit_64 = 0
         self.sig.code_dir_blob.exec_seg_base = 0
         self.sig.code_dir_blob.exec_seg_limit = 0
-        self.sig.code_dir_blob.exec_segflags = 0
+        self.sig.code_dir_blob.exec_seg_flags = 0
         self.sig.code_dir_blob.runtime = 0
         self.sig.code_dir_blob.pre_encrypt_offset = 0
 
-        self.sig.code_dir_blob.ident = self.ident
-        self.sig.code_dir_blob.team_id = self.team_id
+        self.sig.code_dir_blob.ident = self.ident.encode()
+        self.sig.code_dir_blob.team_id = self.team_id.encode()
 
         # Do the special hashes first
         self._set_info_hash()
@@ -362,11 +387,13 @@ class SingleCodeSigner(object):
     def _refresh_macho_header(self):
         macho = MachO(self.filename)
         self.macho_header = macho.headers[self.macho_index]
-        sig_cmds = [cmd for cmd in h.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
-        assert len(sig_cmds) == 0
+        sig_cmds = [
+            cmd for cmd in self.macho_header.commands if cmd[0].cmd == LC_CODE_SIGNATURE
+        ]
+        assert len(sig_cmds) == 1
         self.sigmeta = sig_cmds[0]
 
-    def make_signature(self, offset: int):
+    def make_signature(self):
         assert self.sig.code_dir_blob
 
         # Refresh our MachOHeader
@@ -380,12 +407,13 @@ class SingleCodeSigner(object):
         signed_attrs: CMSAttributes = make_signed_attrs(
             self.sig.code_dir_blob.get_hash(self.hash_type), self.hash_type
         )
-        signature = asymmetric.rsa_pkcs1v15_sign(
-            self.privkey, signed_attrs.dump(), self.hash_type_str
+        actual_privkey = load_private_key(self.privkey)
+        signature = rsa_pkcs1v15_sign(
+            actual_privkey, signed_attrs.dump(), self.hash_type_str
         )
         cms = make_cms(self.cert, self.hash_type, signed_attrs, signature, None)
         self.sig.sig_blob = SignatureBlob()
-        self.sig.sig_blob.cms_data = cms
+        self.sig.sig_blob.cms_data = cms.dump()
 
         # Attach the signature to the MachO binary
         offset = self.macho_header.offset + self.sigmeta[1].dataoff
@@ -578,7 +606,6 @@ class CodeSigner(object):
 
             rel_path = os.path.relpath(file_path, self.content_dir)
             if os.path.isfile(file_path):
-                print(rel_path)
                 rule = _find_rule(rel_path)
                 if rule is not None:
                     # Add the path
@@ -596,7 +623,7 @@ class CodeSigner(object):
         # Make the _CodeSignature folder and write out the resources file
         os.makedirs(code_sig_dir, exist_ok=True)
         with open(os.path.join(code_sig_dir, "CodeResources"), "wb") as f:
-            plistlib.dump(f, resources, fmt=plistlib.FMT_XML)
+            plistlib.dump(resources, f, fmt=plistlib.FMT_XML)
 
     def _allocate(self, arch_sizes: Dict[int, int]):
         """
@@ -613,7 +640,8 @@ class CodeSigner(object):
         for a, s in arch_sizes.items():
             args.append("-a")
             args.append(CPU_TYPE_NAMES[a])
-            args.append(str(s))
+            size = round_up(s, 16)  # codesign_allocate requires a multiple of 16
+            args.append(str(size))
 
         # Run it
         subprocess.check_call(args)
@@ -654,10 +682,11 @@ def sign_mach_o(filename: str, p12_path: str, passphrase: Optional[str] = None):
 
     if passphrase is None:
         passphrase = getpass.getpass(f"Enter the passphrase for {p12_path}: ")
+    pass_bytes = passphrase.encode()
 
     # Load cert and privkey
     with open(p12_path, "rb") as f:
-        privkey, cert, _ = parse_pkcs12(f.read(), passphrase)
+        privkey, cert, _ = parse_pkcs12(f.read(), pass_bytes)
 
     # Sign
     cs = CodeSigner(abs_path, cert, privkey)
