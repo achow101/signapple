@@ -63,7 +63,7 @@ class MatchOP(IntEnum):
 
 
 def _get_op_name(op: ExprOp):
-    op = op & ~ExprOp.OP_FLAG_MASK  # type: ignore
+    op = op & ~OP_FLAG_MASK  # type: ignore
     if op == ExprOp.OP_FALSE:
         return "False"
     elif op == ExprOp.OP_TRUE:
@@ -189,7 +189,7 @@ class ArgMatchExpr(MatchExpr):
         self.arg = arg
 
     def __str__(self):
-        return f"{_get_match_op_name(self.opcode)} {self.arg.hex()}"
+        return f"{_get_match_op_name(self.opcode)} {self.arg}"
 
     def serialize(self, s: BinaryIO):
         super().serialize(s)
@@ -247,7 +247,7 @@ class SingleArgExpr(Expr):
         self.arg = arg
 
     def __str__(self):
-        return f"{_get_op_name(self.opcode)} {self.arg.hex()}"
+        return f"{_get_op_name(self.opcode)} {self.arg}"
 
     def serialize(self, s: BinaryIO):
         super().serialize(s)

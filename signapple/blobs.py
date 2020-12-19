@@ -153,6 +153,36 @@ class CodeDirectoryBlob(Blob):
         self.runtime: Optional[int] = None
         self.pre_encrypt_offset: Optional[int] = None
 
+    def __str__(self):
+        if self.version == 0:
+            return "CodeDirectory not setup yet"
+
+        page_size = 2 ** self.page_size
+        s = f"CodeDirectoryBlob: version: {hex(self.version)}; flags: {hex(self.flags)}; hashes: {self.count_code}+{self.count_special}; page size: {page_size}\n"
+        s += f"hash size: {self.hash_size}; hash type: {self.hash_type}; platform {self.platform}; code limit 64: {self.code_limit_64}\n"
+        s += f"exec seg base: {self.exec_seg_base}; exec seg limit: {self.exec_seg_limit}; exec seg flags: {self.exec_seg_flags}; runtime: {hex(self.runtime)}\n"
+        s += f"CodeDirectory Hash: {self.get_hash(self.hash_type).hex()}\n"
+        s += f"Identifier: {self.ident}; Team ID {self.team_id}\n"
+        if self.ent_der_hash:
+            s += f"   -7: {self.ent_der_hash.hex()}\n"
+        if self.rep_specific_hash:
+            s += f"   -6: {self.rep_specific_hash.hex()}\n"
+        if self.ent_hash:
+            s += f"   -5: {self.ent_hash.hex()}\n"
+        if self.top_dir_hash:
+            s += f"   -4: {self.top_dir_hash.hex()}\n"
+        if self.res_dir_hash:
+            s += f"   -3: {self.res_dir_hash.hex()}\n"
+        if self.reqs_hash:
+            s += f"   -2: {self.reqs_hash.hex()}\n"
+        if self.info_hash:
+            s += f"   -1: {self.info_hash.hex()}\n"
+
+        for i, h in enumerate(self.code_hashes):
+            sp = " " * (5 - len(str(i)))
+            s += f"{sp}{i}: {h.hex()}\n"
+        return s
+
     def get_length_offsets(self) -> Tuple[int, Dict[str, int]]:
         offsets = {}
         length = 44
@@ -426,6 +456,9 @@ class SignatureBlob(Blob):
         self.sig_alg: Optioanl[str] = None
         self.sig: Optiona[bytes] = None
 
+    def __str__(self):
+        return f"SignatureBlob: {self.cms_data.hex()}"
+
     def serialize(self, s: BinaryIO):
         assert self.cms_data
         length = len(self.cms_data) + 8
@@ -443,9 +476,6 @@ class SignatureBlob(Blob):
         signed_data = content["content"]
         assert isinstance(signed_data, SignedData)
         assert len(signed_data["signer_infos"]) == 1
-
-        import pprint
-        pprint.pprint(content.native, width=250)
 
         # Parse certificates
         for cert in signed_data["certificates"]:
@@ -471,6 +501,9 @@ class EmbeddedSignatureBlob(SuperBlob):
         self.sig_blob: Optional[SignatureBlob] = None
         self.ent_blob: Optional[EntitlementsBlob] = None
         self.ent_der_blob: Optional[EntitlementsDERBlob] = None
+
+    def __str__(self):
+        return f"CodeDirectory:\n{self.code_dir_blob}\nRequirementsBlob:\n{self.reqs_blob}\nSignatureBlob:\n{self.sig_blob}\nEntitlementsBlob:\n{self.ent_blob}\nEntitlementsDERBlob:\n{self.ent_der_blob}"
 
     def serialize(self, s: BinaryIO):
         v = BytesIO()
@@ -533,6 +566,9 @@ class RequirementBlob(Blob):
         self.kind: int = 1
         self.req: Optional[Requirement] = req
 
+    def __str__(self):
+        return str(self.req)
+
     def serialize(self, s: BinaryIO):
         assert self.req
         v = BytesIO()
@@ -558,6 +594,9 @@ class RequirementsBlob(SuperBlob):
         self.library_req: Optional[RequirementBlob] = None
         self.plugin_req: Optional[RequirementBlob] = None
         self.invalid_req: Optional[RequirementBlob] = None
+
+    def __str__(self):
+        return f"Host: {self.host_req}\nGuest: {self.guest_req}\nDesignated: {self.designated_req}\nLibrary: {self.library_req}\nPlugin: {self.plugin_req}\nInvalid: {self.invalid_req}"
 
     def serialize(self, s: BinaryIO):
         v = BytesIO()
@@ -624,6 +663,9 @@ class EntitlementsBlob(Blob):
         super().__init__(0xFADE7171)
         self.ent: Optional[Entitlements] = ent
         self.trailing_newline: bool = True
+
+    def __str__(self):
+        return str(self.ent)
 
     def serialize(self, s: BinaryIO):
         assert self.ent
