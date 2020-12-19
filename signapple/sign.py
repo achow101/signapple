@@ -33,6 +33,8 @@ from macholib.mach_o import (
     LC_BUILD_VERSION,
     LC_CODE_SIGNATURE,
     linkedit_data_command,
+    segment_command,
+    segment_command_64,
 )
 from math import log2
 from oscrypto.asymmetric import load_private_key, rsa_pkcs1v15_sign
@@ -259,7 +261,7 @@ class SingleCodeSigner(object):
         self.sig = EmbeddedSignatureBlob()
         self.sig.reqs_blob = RequirementsBlob()
 
-        self.sigmeta: Tuple[int, linkedit_data_command, bytes] = self._get_sigmeta()
+        self.sig_offset = self._calculate_sig_offset()
 
     def _set_info_hash(self):
         self.sig.code_dir_blob.info_hash = hash_file(
@@ -319,12 +321,12 @@ class SingleCodeSigner(object):
 
         with open(self.filename, "rb") as f:
             f.seek(self.macho_header.offset)
-            num_hashes = round_up(self.sigmeta.dataoff, self.page_size) // self.page_size
+            num_hashes = round_up(self.sig_offset, self.page_size) // self.page_size
             read = 0
             for i in range(num_hashes):
                 to_read = self.page_size
-                if read + to_read > self.sigmeta.dataoff:
-                    to_read = self.sigmeta.dataoff - read
+                if read + to_read > self.sig_offset:
+                    to_read = self.sig_offset - read
 
                 data = f.read(to_read)
                 read += to_read
@@ -349,7 +351,7 @@ class SingleCodeSigner(object):
 
         self.sig.code_dir_blob.version = CodeDirectoryBlob.CDVersion.LATEST
         self.sig.code_dir_blob.flags = 0
-        self.sig.code_dir_blob.code_limit = self.sigmeta.dataoff
+        self.sig.code_dir_blob.code_limit = self.sig_offset
         self.sig.code_dir_blob.hash_size = len(get_hash(b"", self.hash_type))
         self.sig.code_dir_blob.hash_type = self.hash_type
         self.sig.code_dir_blob.platform = platform
@@ -384,17 +386,26 @@ class SingleCodeSigner(object):
         self.sig.serialize(v)
         return len(v.getvalue()) + 18000  # Apple uses 18000 for the CMS sig estimate
 
-    def _get_sigmeta(self):
+    def _calculate_sig_offset(self):
         sig_cmds = [
             cmd for cmd in self.macho_header.commands if cmd[0].cmd == LC_CODE_SIGNATURE
         ]
-        assert len(sig_cmds) == 1
-        return sig_cmds[0][1]
+        if len(sig_cmds) == 1:
+            # If we have a sig command, get the offset from there
+            return sig_cmds[0][1].dataoff
+
+        # Now we have to do some math
+        seg_maxes = []
+        for cmd in self.macho_header.commands:
+            meta = cmd[1]
+            if isinstance(meta, segment_command_64) or isinstance(meta, segment_command):
+                seg_maxes.append(meta.fileoff + meta.filesize)
+        return round_up(max(seg_maxes), 16)
 
     def _refresh_macho_header(self):
         macho = MachO(self.filename)
         self.macho_header = macho.headers[self.macho_index]
-        self.sigmeta = self._get_sigmeta()
+        self.sig_offset = self._calculate_sig_offset()
 
     def make_signature(self):
         assert self.sig.code_dir_blob
@@ -418,7 +429,7 @@ class SingleCodeSigner(object):
         self.sig.sig_blob.cms_data = cms.dump()
 
         # Attach the signature to the MachO binary
-        offset = self.macho_header.offset + self.sigmeta.dataoff
+        offset = self.macho_header.offset + self.sig_offset
         with open(self.filename, "rb+") as f:
             f.seek(offset)
             self.sig.serialize(f)
