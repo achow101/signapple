@@ -19,7 +19,7 @@ from .blobs import (
     RequirementsBlob,
 )
 from .certs import APPLE_ROOTS, APPLE_INTERMEDIATES
-from .utils import get_hash, hash_file, sread
+from .utils import get_hash, get_bundle_exec, hash_file, sread
 
 # OIDs fpr Apple's custom certificate critical extensions
 # See the "Certificate Profile" sections of https://images.apple.com/certificateauthority/pdf/Apple_WWDR_CPS_v1.22.pdf
@@ -217,10 +217,11 @@ def _verify_single(filename: str, h: MachOHeader):
 
 
 def verify_mach_o_signature(filename: str):
-    m = macholib.MachO.MachO(filename)
+    bundle, filepath = get_bundle_exec(filename)
+    m = macholib.MachO.MachO(filepath)
 
     # There may be multiple headers because it might be a universal binary
     # In that case, each architecture is essentially just another MachO binary inside of the
     # universal binary. So we verify the signature for each one.
     for header in m.headers:
-        _verify_single(filename, header)
+        _verify_single(filepath, header)

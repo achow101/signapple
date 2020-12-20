@@ -62,7 +62,7 @@ from .reqs import (
     Requirement,
     SingleArgExpr,
 )
-from .utils import get_hash, hash_file, round_up
+from .utils import get_bundle_exec, get_hash, hash_file, round_up
 
 
 HASH_AGILITY_V1_OID = CMSAttributeType("1.2.840.113635.100.9.1")
@@ -737,7 +737,7 @@ def sign_mach_o(filename: str, p12_path: str, passphrase: Optional[str] = None):
     """
     Code sign a Mach-O binary in place
     """
-    abs_path = os.path.abspath(filename)
+    bundle, filepath = get_bundle_exec(filename)
 
     if passphrase is None:
         passphrase = getpass.getpass(f"Enter the passphrase for {p12_path}: ")
@@ -748,5 +748,5 @@ def sign_mach_o(filename: str, p12_path: str, passphrase: Optional[str] = None):
         privkey, cert, _ = parse_pkcs12(f.read(), pass_bytes)
 
     # Sign
-    cs = CodeSigner(abs_path, cert, privkey)
+    cs = CodeSigner(filepath, cert, privkey)
     cs.make_signature()

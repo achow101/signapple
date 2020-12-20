@@ -2,6 +2,7 @@ from macholib.MachO import MachO, MachOHeader
 from macholib.mach_o import LC_CODE_SIGNATURE
 
 from .blobs import EmbeddedSignatureBlob
+from .utils import get_bundle_exec
 
 
 def _dump_single(filename: str, h: MachOHeader):
@@ -28,7 +29,8 @@ def _dump_single(filename: str, h: MachOHeader):
 
 
 def dump_mach_o_signature(filename):
-    macho = MachO(filename)
+    bundle, filepath = get_bundle_exec(filename)
+    macho = MachO(filepath)
 
     for header in macho.headers:
-        _dump_single(filename, header)
+        _dump_single(filepath, header)
