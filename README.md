@@ -11,6 +11,20 @@ Support for those is planned in the future.
 This will add a command named `signapple`.
 Additionally, once all of the dependencies are installed, `codesign.py` will provide the same capabilities as the `signapple` command.
 
+### Dependencies
+
+If you want to install dependencies manually, the dependencies are:
+* [asn1crypto](https://github.com/wbond/asn1crypto/) - Certificate and CMS parsing
+* [oscrypto](https://github.com/wbond/oscrypto/) - Cryptographic signature creation and verification
+* [macholib](https://github.com/ronaldoussoren/macholib) - Parsing Mach-O binaries
+* [certvalidator](https://github.com/achow101/certvalidator/tree/allow-more-criticals) - Certificate chain validation. Note that this is a specifically modified version to allow for Apple specific extensions.
+* [requests](https://requests.readthedocs.io/en/master/) - HTTP transport for RFC 3161 timestamping
+
+Additionally you must have the `codesign_allocate` tool compiled and accessible.
+`signapple` uses `codesign_allocate` in order to allocate space in a binary for the signature.
+Set the path to this tool using the `CODESIGN_ALLOCATE` environment variable.
+If you do not have this tool, it can be compiled from [cctools-port](https://github.com/tpoechtrager/cctools-port/).
+
 ## Usage
 
 `signapple` has three commands: `verify`, `sign`, and `dump`.
