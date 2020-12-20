@@ -52,7 +52,7 @@ def main():
         "--force",
         "-f",
         help="Ignore existing signatures. Otherwise if an existing signature is found, no signing will occur",
-        action="store_true"
+        action="store_true",
     )
     sign_subparser.set_defaults(func=sign)
 

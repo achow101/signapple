@@ -89,6 +89,7 @@ def _sort_attributes(attrs_in: CMSAttributes) -> CMSAttributes:
 
 
 def _validate_cms_signature(sig_blob: SignatureBlob, cd_hash: bytes):
+    assert sig_blob.cms
     signed_data = sig_blob.cms["content"]
     assert isinstance(signed_data, SignedData)
     assert len(signed_data["signer_infos"]) == 1

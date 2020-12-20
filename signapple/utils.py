@@ -75,20 +75,28 @@ def get_bundle_exec(filepath: str) -> Tuple[str, str]:
         # Figure out the bundle path
         macos_dir = os.path.dirname(filepath)
         if os.path.basename(macos_dir) != "MacOS":
-            raise Exception("File is not in a correctly formatted Bundle. Missing MacOS dir")
+            raise Exception(
+                "File is not in a correctly formatted Bundle. Missing MacOS dir"
+            )
         content_dir = os.path.dirname(macos_dir)
         if os.path.basename(content_dir) != "Contents":
-            raise Exception("File is not in a correctly formatted Bundle. Missing Contents dir")
+            raise Exception(
+                "File is not in a correctly formatted Bundle. Missing Contents dir"
+            )
         bundle_dir = os.path.dirname(content_dir)
         return bundle_dir, filepath
     elif os.path.isdir(filepath):
         # This is a directory. Check it is a bundle and find the binary
         content_dir = os.path.join(filepath, "Contents")
         if not os.path.isdir(content_dir):
-            raise Exception("Path is not a correctly formatted Bundle. Missing Contents dir")
+            raise Exception(
+                "Path is not a correctly formatted Bundle. Missing Contents dir"
+            )
         macos_dir = os.path.join(content_dir, "MacOS")
         if not os.path.isdir(macos_dir):
-            raise Exception("Path is not a correctly formatted Bundle. Missing MacOS dir")
+            raise Exception(
+                "Path is not a correctly formatted Bundle. Missing MacOS dir"
+            )
 
         # List all file in this directory
         files = glob.glob(os.path.join(macos_dir, "*"))
@@ -97,6 +105,8 @@ def get_bundle_exec(filepath: str) -> Tuple[str, str]:
         elif len(files) == 1:
             return filepath, files[0]
         else:
-            raise Exception("Multiple binaries found, unsure which to use. Please specify the path to a single binary instead")
+            raise Exception(
+                "Multiple binaries found, unsure which to use. Please specify the path to a single binary instead"
+            )
     else:
         raise Exception("Path is not a bundle directory or a file")

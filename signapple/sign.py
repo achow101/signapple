@@ -296,7 +296,9 @@ class SingleCodeSigner(object):
         if not force:
             sig_cmd = self._get_sig_command()
             if sig_cmd is not None:
-                raise Exception("Binary already signed. Please use --force to ignore existing signatures")
+                raise Exception(
+                    "Binary already signed. Please use --force to ignore existing signatures"
+                )
 
     def _set_info_hash(self):
         self.sig.code_dir_blob.info_hash = hash_file(
@@ -495,7 +497,13 @@ class SingleCodeSigner(object):
 
 
 class CodeSigner(object):
-    def __init__(self, filename: str, cert: Certificate, privkey: PrivateKeyInfo, force: bool = False):
+    def __init__(
+        self,
+        filename: str,
+        cert: Certificate,
+        privkey: PrivateKeyInfo,
+        force: bool = False,
+    ):
         self.filename = filename
         self.content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
         self.cert = cert
@@ -729,7 +737,9 @@ class CodeSigner(object):
         code_signers: List[SingleCodeSigner] = []
         arch_sizes: Dict[int, int] = {}  # cputype: sig size
         for i, h in enumerate(macho.headers):
-            cs = SingleCodeSigner(self.filename, i, h, self.cert, self.privkey, force=self.force)
+            cs = SingleCodeSigner(
+                self.filename, i, h, self.cert, self.privkey, force=self.force
+            )
             cs.make_code_directory()
             code_signers.append(cs)
 
@@ -750,7 +760,9 @@ class CodeSigner(object):
             cs.make_signature()
 
 
-def sign_mach_o(filename: str, p12_path: str, passphrase: Optional[str] = None, force: bool = False):
+def sign_mach_o(
+    filename: str, p12_path: str, passphrase: Optional[str] = None, force: bool = False
+):
     """
     Code sign a Mach-O binary in place
     """
