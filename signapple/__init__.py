@@ -37,11 +37,11 @@ def main():
         "sign", help="Create a code signature for a binary"
     )
     sign_subparser.add_argument(
-        "filename", help="Path to the binary to sign. It will be modified in place"
-    )
-    sign_subparser.add_argument(
         "keypath",
         help="Path to the PKCS#12 archive containing the certificate and private key to sign with",
+    )
+    sign_subparser.add_argument(
+        "filename", help="Path to the binary to sign. It will be modified in place"
     )
     sign_subparser.add_argument(
         "--passphrase",
