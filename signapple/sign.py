@@ -263,6 +263,7 @@ class SingleCodeSigner(object):
         privkey: PrivateKeyInfo,
         reqs_path: Optional[str] = None,
         ents_path: Optional[str] = None,
+        force: bool = False,
     ):
         self.filename: str = filename
         self.macho_index: int = macho_index
@@ -291,6 +292,11 @@ class SingleCodeSigner(object):
         self.sig.reqs_blob = RequirementsBlob()
 
         self.sig_offset = self._calculate_sig_offset()
+
+        if not force:
+            sig_cmd = self._get_sig_command()
+            if sig_cmd is not None:
+                raise Exception("Binary already signed. Please use --force to ignore existing signatures")
 
     def _set_info_hash(self):
         self.sig.code_dir_blob.info_hash = hash_file(
@@ -418,13 +424,20 @@ class SingleCodeSigner(object):
         self.sig.serialize(v)
         return len(v.getvalue()) + 18000  # Apple uses 18000 for the CMS sig estimate
 
-    def _calculate_sig_offset(self):
+    def _get_sig_command(self):
         sig_cmds = [
             cmd for cmd in self.macho_header.commands if cmd[0].cmd == LC_CODE_SIGNATURE
         ]
         if len(sig_cmds) == 1:
-            # If we have a sig command, get the offset from there
-            return sig_cmds[0][1].dataoff
+            return sig_cmds[0]
+        else:
+            return None
+
+    def _calculate_sig_offset(self):
+        sig_cmd = self._get_sig_command()
+        if sig_cmd is not None:
+            # We have a sig command, get the offset from there
+            return sig_cmd[1].dataoff
 
         # Now we have to do some math
         seg_maxes = []
@@ -482,11 +495,12 @@ class SingleCodeSigner(object):
 
 
 class CodeSigner(object):
-    def __init__(self, filename: str, cert: Certificate, privkey: PrivateKeyInfo):
+    def __init__(self, filename: str, cert: Certificate, privkey: PrivateKeyInfo, force: bool = False):
         self.filename = filename
         self.content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
         self.cert = cert
         self.privkey = privkey
+        self.force = force
 
         self.hash_type = 2
 
@@ -709,18 +723,21 @@ class CodeSigner(object):
         """
         Signs the filename in place
         """
-        # Make CodeResources
-        self._build_resources()
-
         # Open the MachO and prepare the code signer for each embedded binary
         # Get all of the size estimates
         macho = MachO(self.filename)
         code_signers: List[SingleCodeSigner] = []
         arch_sizes: Dict[int, int] = {}  # cputype: sig size
         for i, h in enumerate(macho.headers):
-            cs = SingleCodeSigner(self.filename, i, h, self.cert, self.privkey)
+            cs = SingleCodeSigner(self.filename, i, h, self.cert, self.privkey, force=self.force)
             cs.make_code_directory()
             code_signers.append(cs)
+
+        # Make CodeResources
+        self._build_resources()
+
+        for cs in code_signers:
+            cs.make_code_directory()
 
             arch_sizes[h.header.cputype] = cs.get_size_estimate()
 
@@ -733,7 +750,7 @@ class CodeSigner(object):
             cs.make_signature()
 
 
-def sign_mach_o(filename: str, p12_path: str, passphrase: Optional[str] = None):
+def sign_mach_o(filename: str, p12_path: str, passphrase: Optional[str] = None, force: bool = False):
     """
     Code sign a Mach-O binary in place
     """
@@ -748,5 +765,5 @@ def sign_mach_o(filename: str, p12_path: str, passphrase: Optional[str] = None):
         privkey, cert, _ = parse_pkcs12(f.read(), pass_bytes)
 
     # Sign
-    cs = CodeSigner(filepath, cert, privkey)
+    cs = CodeSigner(filepath, cert, privkey, force=force)
     cs.make_signature()

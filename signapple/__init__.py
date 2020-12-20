@@ -12,7 +12,7 @@ def verify(args):
 
 
 def sign(args):
-    sign_mach_o(args.filename, args.keypath, args.passphrase)
+    sign_mach_o(args.filename, args.keypath, args.passphrase, args.force)
     print("Code signature created")
 
 
@@ -47,6 +47,12 @@ def main():
         "--passphrase",
         "-p",
         help="The passphrase protecting the private key. If not specified, you will be prompted to enter it later",
+    )
+    sign_subparser.add_argument(
+        "--force",
+        "-f",
+        help="Ignore existing signatures. Otherwise if an existing signature is found, no signing will occur",
+        action="store_true"
     )
     sign_subparser.set_defaults(func=sign)
 
