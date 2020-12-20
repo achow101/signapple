@@ -293,6 +293,8 @@ class SingleCodeSigner(object):
 
         self.sig_offset = self._calculate_sig_offset()
 
+        self.files_modified: List[str] = []
+
         if not force:
             sig_cmd = self._get_sig_command()
             if sig_cmd is not None:
@@ -494,6 +496,12 @@ class SingleCodeSigner(object):
         with open(self.filename, "rb+") as f:
             f.seek(offset)
             self.sig.serialize(f)
+            self.files_modified.append(self.filename)
+
+    def write_file_list(self, file_list: str):
+        with open(file_list, "a") as f:
+            for l in self.files_modified:
+                f.write(l + "\n")
 
 
 class CodeSigner(object):
@@ -511,6 +519,10 @@ class CodeSigner(object):
         self.force = force
 
         self.hash_type = 2
+
+        self.code_signers: List[SingleCodeSigner] = []
+
+        self.files_modified: List[str] = []
 
     def _hash_name(self) -> str:
         """
@@ -703,8 +715,10 @@ class CodeSigner(object):
 
         # Make the _CodeSignature folder and write out the resources file
         os.makedirs(code_sig_dir, exist_ok=True)
-        with open(os.path.join(code_sig_dir, "CodeResources"), "wb") as f:
+        cr_path = os.path.join(code_sig_dir, "CodeResources")
+        with open(cr_path, "wb") as f:
             plistlib.dump(resources, f, fmt=plistlib.FMT_XML)
+            self.files_modified.append(cr_path)
 
     def _allocate(self, arch_sizes: Dict[int, int]):
         """
@@ -734,19 +748,18 @@ class CodeSigner(object):
         # Open the MachO and prepare the code signer for each embedded binary
         # Get all of the size estimates
         macho = MachO(self.filename)
-        code_signers: List[SingleCodeSigner] = []
         arch_sizes: Dict[int, int] = {}  # cputype: sig size
         for i, h in enumerate(macho.headers):
             cs = SingleCodeSigner(
                 self.filename, i, h, self.cert, self.privkey, force=self.force
             )
             cs.make_code_directory()
-            code_signers.append(cs)
+            self.code_signers.append(cs)
 
         # Make CodeResources
         self._build_resources()
 
-        for cs in code_signers:
+        for cs in self.code_signers:
             cs.make_code_directory()
 
             arch_sizes[h.header.cputype] = cs.get_size_estimate()
@@ -756,12 +769,24 @@ class CodeSigner(object):
         self._allocate(arch_sizes)
 
         # Make the final signatures and add it to the binaries
-        for cs in code_signers:
+        for cs in self.code_signers:
             cs.make_signature()
+
+    def write_file_list(self, file_list: str):
+        with open(file_list, "a") as f:
+            for l in self.files_modified:
+                f.write(l + "\n")
+
+        for cs in self.code_signers:
+            cs.write_file_list(file_list)
 
 
 def sign_mach_o(
-    filename: str, p12_path: str, passphrase: Optional[str] = None, force: bool = False
+    filename: str,
+    p12_path: str,
+    passphrase: Optional[str] = None,
+    force: bool = False,
+    file_list: Optional[str] = None,
 ):
     """
     Code sign a Mach-O binary in place
@@ -779,3 +804,6 @@ def sign_mach_o(
     # Sign
     cs = CodeSigner(filepath, cert, privkey, force=force)
     cs.make_signature()
+
+    if file_list is not None:
+        cs.write_file_list(file_list)

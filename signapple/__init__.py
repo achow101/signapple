@@ -12,7 +12,9 @@ def verify(args):
 
 
 def sign(args):
-    sign_mach_o(args.filename, args.keypath, args.passphrase, args.force)
+    sign_mach_o(
+        args.filename, args.keypath, args.passphrase, args.force, args.file_list
+    )
     print("Code signature created")
 
 
@@ -53,6 +55,9 @@ def main():
         "-f",
         help="Ignore existing signatures. Otherwise if an existing signature is found, no signing will occur",
         action="store_true",
+    )
+    sign_subparser.add_argument(
+        "--file-list", help="Path to write out the list of modified files to"
     )
     sign_subparser.set_defaults(func=sign)
 
