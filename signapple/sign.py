@@ -753,7 +753,6 @@ class CodeSigner(object):
             cs = SingleCodeSigner(
                 self.filename, i, h, self.cert, self.privkey, force=self.force
             )
-            cs.make_code_directory()
             self.code_signers.append(cs)
 
         # Make CodeResources
