@@ -1,13 +1,11 @@
 import io
-import macholib
 import os
 
 from asn1crypto.cms import CMSAttributes, SignedData
 from asn1crypto.x509 import Certificate
 from certvalidator.context import ValidationContext
 from certvalidator import CertificateValidator
-from macholib.MachO import MachO, MachOHeader
-from macholib.mach_o import LC_CODE_SIGNATURE
+from elfesteem.macho import MACHO, LC_CODE_SIGNATURE
 from oscrypto import asymmetric
 from typing import BinaryIO
 
@@ -139,28 +137,28 @@ def _validate_cms_signature(sig_blob: SignatureBlob, cd_hash: bytes):
     asymmetric.rsa_pkcs1v15_verify(pubkey, sig, signed_msg, digest_alg)
 
 
-def _verify_single(filename: str, h: MachOHeader):
+def _verify_single(filename: str, h: MACHO):
     # Get the offset of the signature from the header
     # It is under the LC_CODE_SIGNATURE command
-    sigmeta = [cmd for cmd in h.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
+    sigmeta = [cmd for cmd in h.load.lhlist if cmd.cmd == LC_CODE_SIGNATURE]
     if len(sigmeta) == 0:
         raise Exception("No embedded code signature sections")
     elif len(sigmeta) > 1:
         raise Exception("Multiple embedded code signature sections")
-    sigmeta = sigmeta[0]
-    sig_offset = sigmeta[1].dataoff
+    sig_lc = sigmeta[0]
 
-    with open(filename, "rb") as f:
-        # We need to account for the offset of the start of the binary itself because of Universal binaries
-        f.seek(sig_offset + h.offset)
-        sig_superblob = EmbeddedSignatureBlob()
-        sig_superblob.deserialize(f)
+    sig_data = h.pack()
+    f = io.BytesIO(sig_data)
 
-        assert sig_superblob.code_dir_blob
-        assert sig_superblob.sig_blob
+    f.seek(sig_lc.dataoff)
+    sig_superblob = EmbeddedSignatureBlob()
+    sig_superblob.deserialize(f)
 
-        f.seek(h.offset)
-        _validate_code_hashes(f, sig_superblob.code_dir_blob)
+    assert sig_superblob.code_dir_blob
+    assert sig_superblob.sig_blob
+
+    f.seek(0)
+    _validate_code_hashes(f, sig_superblob.code_dir_blob)
 
     assert sig_superblob.code_dir_blob.hash_type
     content_dir = os.path.split(os.path.split(os.path.abspath(filename))[0])[0]
@@ -219,10 +217,14 @@ def _verify_single(filename: str, h: MachOHeader):
 
 def verify_mach_o_signature(filename: str):
     bundle, filepath = get_bundle_exec(filename)
-    m = macholib.MachO.MachO(filepath)
+    with open(filepath, "rb") as f:
+        m = MACHO(f.read())
 
     # There may be multiple headers because it might be a universal binary
     # In that case, each architecture is essentially just another MachO binary inside of the
     # universal binary. So we verify the signature for each one.
-    for header in m.headers:
-        _verify_single(filepath, header)
+    if hasattr(m, "Fhdr"):
+        for header in m.arch:
+            _verify_single(filepath, header)
+    else:
+        _verify_single(filepath, m)
