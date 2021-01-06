@@ -28,16 +28,16 @@ from asn1crypto.x509 import Certificate
 from asn1crypto.keys import PrivateKeyInfo
 from collections import OrderedDict
 from datetime import datetime, timezone
-from io import BytesIO
-from macholib.MachO import MachO, MachOHeader
-from macholib.mach_o import (
-    CPU_TYPE_NAMES,
+from elfesteem.macho import (
+    CodeSignature,
     LC_BUILD_VERSION,
     LC_CODE_SIGNATURE,
     linkedit_data_command,
+    MACHO,
     segment_command,
-    segment_command_64,
 )
+from elfesteem.strpatchwork import StrPatchwork
+from io import BytesIO
 from math import log2
 from oscrypto.asymmetric import load_private_key, rsa_pkcs1v15_sign
 from oscrypto.keys import parse_pkcs12, parse_private
@@ -62,7 +62,7 @@ from .reqs import (
     Requirement,
     SingleArgExpr,
 )
-from .utils import get_bundle_exec, get_hash, hash_file, round_up
+from .utils import get_bundle_exec, get_hash, get_macho_list, hash_file, round_up
 
 
 HASH_AGILITY_V1_OID = CMSAttributeType("1.2.840.113635.100.9.1")
@@ -258,7 +258,7 @@ class SingleCodeSigner(object):
         self,
         filename: str,
         macho_index: int,
-        macho_header: MachOHeader,
+        macho: MACHO,
         cert: Certificate,
         privkey: PrivateKeyInfo,
         reqs_path: Optional[str] = None,
@@ -267,7 +267,7 @@ class SingleCodeSigner(object):
     ):
         self.filename: str = filename
         self.macho_index: int = macho_index
-        self.macho_header: MachOHeader = macho_header
+        self.macho: MACHO = macho
         self.cert: Certificate = cert
         self.privkey: PrivateKeyInfo = privkey
 
@@ -286,17 +286,15 @@ class SingleCodeSigner(object):
 
         self.hash_type = 2  # Use SHA256 hash
         self.hash_type_str = "sha256"
-        self.page_size = PAGE_SIZES[self.macho_header.header.cputype]
+        self.page_size = PAGE_SIZES[self.macho.Mhdr.cputype]
 
         self.sig = EmbeddedSignatureBlob()
         self.sig.reqs_blob = RequirementsBlob()
 
-        self.sig_offset = self._calculate_sig_offset()
-
         self.files_modified: List[str] = []
 
         if not force:
-            sig_cmd = self._get_sig_command()
+            sig_cmd = self.get_sig_command()
             if sig_cmd is not None:
                 raise Exception(
                     "Binary already signed. Please use --force to ignore existing signatures"
@@ -358,20 +356,18 @@ class SingleCodeSigner(object):
         # Maybe the file got modified, so clear any hashes and recompute them all
         self.sig.code_dir_blob.code_hashes.clear()
 
-        with open(self.filename, "rb") as f:
-            f.seek(self.macho_header.offset)
-            num_hashes = round_up(self.sig_offset, self.page_size) // self.page_size
-            read = 0
-            for i in range(num_hashes):
-                to_read = self.page_size
-                if read + to_read > self.sig_offset:
-                    to_read = self.sig_offset - read
+        sig_offset = self.calculate_sig_offset()
+        f = BytesIO(self.macho.pack())
+        num_hashes = round_up(sig_offset, self.page_size) // self.page_size
+        read = 0
+        for i in range(num_hashes):
+            to_read = self.page_size
+            if read + to_read > sig_offset:
+                to_read = sig_offset - read
 
-                data = f.read(to_read)
-                read += to_read
-                self.sig.code_dir_blob.code_hashes.append(
-                    get_hash(data, self.hash_type)
-                )
+            data = f.read(to_read)
+            read += to_read
+            self.sig.code_dir_blob.code_hashes.append(get_hash(data, self.hash_type))
 
     def _set_code_res_hash(self):
         code_res_path = os.path.join(
@@ -381,19 +377,19 @@ class SingleCodeSigner(object):
 
     def make_code_directory(self):
         build_meta = [
-            cmd for cmd in self.macho_header.commands if cmd[0].cmd == LC_BUILD_VERSION
+            cmd for cmd in self.macho.load.lhlist if cmd.cmd == LC_BUILD_VERSION
         ]
         if len(build_meta) == 0:
             platform = 0
         else:
             assert len(build_meta) == 1
-            platform = build_meta[0][1].platform
+            platform = build_meta[0].platform
 
         self.sig.code_dir_blob = CodeDirectoryBlob()
 
         self.sig.code_dir_blob.version = CodeDirectoryBlob.CDVersion.LATEST
         self.sig.code_dir_blob.flags = 0
-        self.sig.code_dir_blob.code_limit = self.sig_offset
+        self.sig.code_dir_blob.code_limit = self.calculate_sig_offset()
         self.sig.code_dir_blob.hash_size = len(get_hash(b"", self.hash_type))
         self.sig.code_dir_blob.hash_type = self.hash_type
         self.sig.code_dir_blob.platform = platform
@@ -428,41 +424,35 @@ class SingleCodeSigner(object):
         self.sig.serialize(v)
         return len(v.getvalue()) + 18000  # Apple uses 18000 for the CMS sig estimate
 
-    def _get_sig_command(self):
+    def get_sig_command(self):
         sig_cmds = [
-            cmd for cmd in self.macho_header.commands if cmd[0].cmd == LC_CODE_SIGNATURE
+            cmd for cmd in self.macho.load.lhlist if cmd.cmd == LC_CODE_SIGNATURE
         ]
         if len(sig_cmds) == 1:
             return sig_cmds[0]
         else:
             return None
 
-    def _calculate_sig_offset(self):
-        sig_cmd = self._get_sig_command()
+    def get_linkedit_segment(self):
+        seg_cmds = [
+            cmd
+            for cmd in self.macho.load.lhlist
+            if isinstance(cmd, segment_command) and cmd.segname == "__LINKEDIT"
+        ]
+        assert len(seg_cmds) == 1, "Could not find __LINKEDIT segment"
+        return seg_cmds[0]
+
+    def calculate_sig_offset(self):
+        sig_cmd = self.get_sig_command()
         if sig_cmd is not None:
             # We have a sig command, get the offset from there
-            return sig_cmd[1].dataoff
+            return sig_cmd.dataoff
 
-        # Now we have to do some math
-        seg_maxes = []
-        for cmd in self.macho_header.commands:
-            meta = cmd[1]
-            if isinstance(meta, segment_command_64) or isinstance(
-                meta, segment_command
-            ):
-                seg_maxes.append(meta.fileoff + meta.filesize)
-        return round_up(max(seg_maxes), 16)
-
-    def _refresh_macho_header(self):
-        macho = MachO(self.filename)
-        self.macho_header = macho.headers[self.macho_index]
-        self.sig_offset = self._calculate_sig_offset()
+        ls_seg = self.get_linkedit_segment()
+        return round_up(ls_seg.fileoff + ls_seg.filesize, 16)
 
     def make_signature(self):
         assert self.sig.code_dir_blob
-
-        # Refresh our MachOHeader
-        self._refresh_macho_header()
 
         # Redo the code hashes
         self._set_code_hashes()
@@ -491,12 +481,17 @@ class SingleCodeSigner(object):
             self.cert, self.hash_type, signed_attrs, signature, CMSAttributes([tst])
         )
 
-        # Attach the signature to the MachO binary
-        offset = self.macho_header.offset + self.sig_offset
-        with open(self.filename, "rb+") as f:
-            f.seek(offset)
-            self.sig.serialize(f)
-            self.files_modified.append(self.filename)
+        # Get the CodeSignature section. It should be the last in the binary
+        cs_sec = self.macho.sect[-1]
+        assert cs_sec == self.get_linkedit_segment().sect[-1]
+        assert isinstance(cs_sec, CodeSignature)
+        sig_cmd = self.get_sig_command()
+
+        # Modify it's contents to be the signature
+        f = BytesIO()
+        self.sig.serialize(f)
+        f.write((sig_cmd.datasize - f.tell()) * b"\x00")
+        cs_sec.content = StrPatchwork(f.getvalue())
 
     def write_file_list(self, file_list: str):
         with open(file_list, "a") as f:
@@ -720,26 +715,49 @@ class CodeSigner(object):
             plistlib.dump(resources, f, fmt=plistlib.FMT_XML)
             self.files_modified.append(cr_path)
 
-    def _allocate(self, arch_sizes: Dict[int, int]):
-        """
-        Calls codesign_allocate to allocate space in the binary as specified in arch_sizes.
-        After doing this, each SingleCodeSigner will need to refresh it's macho header to know
-        where to put the signature
-        """
-        # Get the codesign_allocate binary to run
-        alloc_tool = os.getenv("CODESIGN_ALLOCATE", "codesign_allocate")
+    def _allocate(self):
+        for cs in self.code_signers:
+            # Get fresh calculations of offset and size
+            sig_offset = cs.calculate_sig_offset()
+            sig_size = cs.get_size_estimate()
+            sig_end = sig_offset + sig_size
 
-        # Create the command to run
-        # Note that we will modify in place
-        args = [alloc_tool, "-i", self.filename, "-o", self.filename]
-        for a, s in arch_sizes.items():
-            args.append("-a")
-            args.append(CPU_TYPE_NAMES[a].lower())
-            size = round_up(s, 16)  # codesign_allocate requires a multiple of 16
-            args.append(str(size))
+            # Get the linkedit segment
+            linkedit_seg = cs.get_linkedit_segment()
+            linkedit_end = linkedit_seg.fileoff + linkedit_seg.filesize
 
-        # Run it
-        subprocess.check_call(args)
+            cmd = cs.get_sig_command()
+            if cmd is not None:
+                # Existing sig command. Get the CodeSignature section. It should be last one in the binary.
+                cs_sec = cs.macho.sect[-1]
+                sig_size = sig_size if sig_size > cmd.datasize else cmd.datasize
+            else:
+                # No existing sig command, so add one.
+                cmd = linkedit_data_command(cmd=LC_CODE_SIGNATURE, parent=cs.macho.load)
+
+                # Add the load command
+                cs.macho.load.append(cmd)
+
+                # Create a CodeSignature section
+                cs_sec = CodeSignature(parent=cmd)
+
+                # Add it to the binary
+                # Note, don't use linkedit_seg.addSH because linkedit doesn't actually have segments.
+                linkedit_seg.sect.append(cs_sec)
+                cs.macho.sect.add(cs_sec)
+
+            # Set the size, offset, and empty content of the CodeSignature section
+            cmd.dataoff = sig_offset
+            cmd.datasize = sig_size
+            cs_sec.size = sig_size
+            cs_sec.offset = sig_offset
+            cs_sec.content = StrPatchwork(sig_size * b"\x00")
+
+            # increase linkedit size
+            end_diff = sig_end - linkedit_end
+            if end_diff > 0:
+                linkedit_seg.filesize += end_diff
+                linkedit_seg.vmsize = round_up(linkedit_seg.filesize, cs.page_size)
 
     def make_signature(self):
         """
@@ -747,9 +765,10 @@ class CodeSigner(object):
         """
         # Open the MachO and prepare the code signer for each embedded binary
         # Get all of the size estimates
-        macho = MachO(self.filename)
+        with open(self.filename, "rb") as f:
+            macho = MACHO(f.read())
         arch_sizes: Dict[int, int] = {}  # cputype: sig size
-        for i, h in enumerate(macho.headers):
+        for i, h in enumerate(get_macho_list(macho)):
             cs = SingleCodeSigner(
                 self.filename, i, h, self.cert, self.privkey, force=self.force
             )
@@ -761,15 +780,18 @@ class CodeSigner(object):
         for cs in self.code_signers:
             cs.make_code_directory()
 
-            arch_sizes[h.header.cputype] = cs.get_size_estimate()
-
         # Allocate space in the binary for all of the signatures
-        # After this point, macho is no longer valid and cannot be used further
-        self._allocate(arch_sizes)
+        self._allocate()
 
         # Make the final signatures and add it to the binaries
         for cs in self.code_signers:
             cs.make_signature()
+
+        # Write out the final macho
+        with open(self.filename, "wb") as f:
+            data = macho.pack()
+            f.write(data)
+            self.files_modified.append(self.filename)
 
     def write_file_list(self, file_list: str):
         with open(file_list, "a") as f:
