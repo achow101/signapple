@@ -111,3 +111,10 @@ def get_bundle_exec(filepath: str) -> Tuple[str, str]:
             )
     else:
         raise Exception("Path is not a bundle directory or a file")
+
+
+def get_macho_list(m: MACHO):
+    if hasattr(m, "Fhdr"):
+        return m.arch
+    else:
+        return [m]

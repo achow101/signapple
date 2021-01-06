@@ -2,7 +2,7 @@ from elfesteem.macho import MACHO, LC_CODE_SIGNATURE
 from io import BytesIO
 
 from .blobs import EmbeddedSignatureBlob
-from .utils import get_bundle_exec
+from .utils import get_bundle_exec, get_macho_list
 
 
 def _dump_single(filename: str, b: MACHO):
@@ -33,8 +33,5 @@ def dump_mach_o_signature(filename):
     with open(filepath, "rb") as f:
         macho = MACHO(f.read())
 
-    if hasattr(macho, "Fhdr"):
-        for header in macho.arch:
-            _dump_single(filepath, header)
-    else:
-        _dump_single(filepath, macho)
+    for header in get_macho_list(macho):
+        _dump_single(filepath, header)
