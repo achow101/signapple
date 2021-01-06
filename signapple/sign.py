@@ -533,123 +533,69 @@ class CodeSigner(object):
         # Build the resource rules
         # TODO: Resource rules can be embedded in some places. Figure out how to deal with those.
         # For now, we just use the default resource rules from Security/OSX/libsecurity_codesigning/lib/bundlediskrep.cpp
-        if os.path.exists(resource_dir):
-            rules: Dict[str, Dict[str, Any]] = {
-                "rules": {
-                    "^version.plist$": True,
-                    "^Resources/": True,
-                    "^Resources/.*\.lproj": {
-                        "optional": True,
-                        "weight": 1000,
-                    },
-                    "^Resources/Base\.lproj/": {
-                        "weight": 1010,
-                    },
-                    "^Resources/.*\.lproj/locversion.plist$": {
-                        "omit": True,
-                        "weight": 1100,
-                    },
+        rules: Dict[str, Dict[str, Any]] = {
+            "rules": {
+                "^version.plist$": True,
+                "^Resources/": True,
+                "^Resources/.*\.lproj": {
+                    "optional": True,
+                    "weight": 1000,
                 },
-                "rules2": {
-                    "^.*": True,
-                    "^[^/]+$": {
-                        "nested": True,
-                        "weight": 10,
-                    },
-                    "^(Frameworks|SharedFrameworks|PlugIns|Plug-ins|XPCServices|Helpers|MacOS|Library/(Automator|Spotlight|LoginItems))/": {
-                        "nested": True,
-                        "weight": 10,
-                    },
-                    ".*\.dSYM($|/)": {
-                        "weight": 11,
-                    },
-                    "^(.*/)?\.DS_Store$": {
-                        "omit": True,
-                        "weight": 2000,
-                    },
-                    "^Info\.plist$": {
-                        "omit": True,
-                        "weight": 20,
-                    },
-                    "^version\.plist$": {
-                        "weight": 20,
-                    },
-                    "^embedded\.provisionprofile$": {
-                        "weight": 20,
-                    },
-                    "^PkgInfo$": {
-                        "omit": True,
-                        "weight": 20,
-                    },
-                    "^Resources/": {
-                        "weight": 20,
-                    },
-                    "^Resources/.*\.lproj/<": {
-                        "optional": True,
-                        "weight": 1000,
-                    },
-                    "^Resources/Base\.lproj/": {
-                        "weight": 1010,
-                    },
-                    "^Resources/.*\.lproj/locversion.plist$": {
-                        "omit": True,
-                        "weight": 1100,
-                    },
+                "^Resources/Base\.lproj/": {
+                    "weight": 1010,
                 },
-            }
-        else:
-            rules: Dict[str, Dict[str, Any]] = {
-                "rules": {
-                    "^version.plist$": True,
-                    "^.*": True,
-                    "^.*\.lproj": {
-                        "optional": True,
-                        "weight": 1000,
-                    },
-                    "^Base\.lproj/": {
-                        "weight": 1010,
-                    },
-                    "^.*\.lproj/locversion.plist$": {
-                        "omit": True,
-                        "weight": 1100,
-                    },
+                "^Resources/.*\.lproj/locversion.plist$": {
+                    "omit": True,
+                    "weight": 1100,
                 },
-                "rules2": {
-                    "^.*": True,
-                    ".*\.dSYM($|/)": {
-                        "weight": 11,
-                    },
-                    "^(.*/)?\.DS_Store$": {
-                        "omit": True,
-                        "weight": 2000,
-                    },
-                    "^Info\.plist$": {
-                        "omit": True,
-                        "weight": 20,
-                    },
-                    "^version\.plist$": {
-                        "weight": 20,
-                    },
-                    "^embedded\.provisionprofile$": {
-                        "weight": 20,
-                    },
-                    "^PkgInfo$": {
-                        "omit": True,
-                        "weight": 20,
-                    },
-                    "^.*\.lproj/<": {
-                        "optional": True,
-                        "weight": 1000,
-                    },
-                    "^Base\.lproj/": {
-                        "weight": 1010,
-                    },
-                    "^.*\.lproj/locversion.plist$": {
-                        "omit": True,
-                        "weight": 1100,
-                    },
+            },
+            "rules2": {
+                "^.*": True,
+                "^[^/]+$": {
+                    "nested": True,
+                    "weight": 10,
                 },
-            }
+                "^(Frameworks|SharedFrameworks|PlugIns|Plug-ins|XPCServices|Helpers|MacOS|Library/(Automator|Spotlight|LoginItems))/": {
+                    "nested": True,
+                    "weight": 10,
+                },
+                ".*\.dSYM($|/)": {
+                    "weight": 11,
+                },
+                "^(.*/)?\.DS_Store$": {
+                    "omit": True,
+                    "weight": 2000,
+                },
+                "^Info\.plist$": {
+                    "omit": True,
+                    "weight": 20,
+                },
+                "^version\.plist$": {
+                    "weight": 20,
+                },
+                "^embedded\.provisionprofile$": {
+                    "weight": 20,
+                },
+                "^PkgInfo$": {
+                    "omit": True,
+                    "weight": 20,
+                },
+                "^Resources/": {
+                    "weight": 20,
+                },
+                "^Resources/.*\.lproj/<": {
+                    "optional": True,
+                    "weight": 1000,
+                },
+                "^Resources/Base\.lproj/": {
+                    "weight": 1010,
+                },
+                "^Resources/.*\.lproj/locversion.plist$": {
+                    "omit": True,
+                    "weight": 1100,
+                },
+            },
+        }
 
         def _find_rule(path: str) -> Optional[Tuple[str, Any, Any]]:
             """
