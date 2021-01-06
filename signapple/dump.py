@@ -1,36 +1,40 @@
-from macholib.MachO import MachO, MachOHeader
-from macholib.mach_o import LC_CODE_SIGNATURE
+from elfesteem.macho import MACHO, LC_CODE_SIGNATURE
+from io import BytesIO
 
 from .blobs import EmbeddedSignatureBlob
 from .utils import get_bundle_exec
 
 
-def _dump_single(filename: str, h: MachOHeader):
+def _dump_single(filename: str, b: MACHO):
     # Get the offset of the signature from the header
     # It is under the LC_CODE_SIGNATURE command
-    sigmeta = [cmd for cmd in h.commands if cmd[0].cmd == LC_CODE_SIGNATURE]
+    sigmeta = [cmd for cmd in b.load.lhlist if cmd.cmd == LC_CODE_SIGNATURE]
     if len(sigmeta) == 0:
         raise Exception("No embedded code signature sections")
     elif len(sigmeta) > 1:
         raise Exception("Multiple embedded code signature sections")
-    sigmeta = sigmeta[0]
-    sig_offset = sigmeta[1].dataoff
+    sig_lc = sigmeta[0]
+    sig_end = sig_lc.dataoff + sig_lc.datasize
 
-    with open(filename, "rb") as f:
-        # We need to account for the offset of the start of the binary itself because of Universal binaries
-        f.seek(sig_offset + h.offset)
-        sig_superblob = EmbeddedSignatureBlob()
-        sig_superblob.deserialize(f)
+    sig_data = b.pack()[sig_lc.dataoff : sig_end]
+    v = BytesIO(sig_data)
 
-        assert sig_superblob.code_dir_blob
-        assert sig_superblob.sig_blob
+    sig_superblob = EmbeddedSignatureBlob()
+    sig_superblob.deserialize(v)
+
+    assert sig_superblob.code_dir_blob
+    assert sig_superblob.sig_blob
 
     print(sig_superblob)
 
 
 def dump_mach_o_signature(filename):
     bundle, filepath = get_bundle_exec(filename)
-    macho = MachO(filepath)
+    with open(filepath, "rb") as f:
+        macho = MACHO(f.read())
 
-    for header in macho.headers:
-        _dump_single(filepath, header)
+    if hasattr(macho, "Fhdr"):
+        for header in macho.arch:
+            _dump_single(filepath, header)
+    else:
+        _dump_single(filepath, macho)
