@@ -787,6 +787,17 @@ class CodeSigner(object):
         for cs in self.code_signers:
             cs.make_signature()
 
+        # Fix the fat header because offsets may have moved
+        if hasattr(macho, "Fhdr"):
+            for cs in self.code_signers:
+                macho.fh[cs.macho_index].size = len(cs.macho.pack())
+            p = 0
+            for h, m in zip(macho.fh, macho.arch.macholist):
+                if p > h.offset:
+                    h.offset = round_up(p, 2 ** h.align)
+                    m.offset = h.offset
+                p = h.offset + h.size
+
         # Write out the final macho
         with open(self.filename, "wb") as f:
             data = macho.pack()
