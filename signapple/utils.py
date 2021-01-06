@@ -2,7 +2,7 @@ import glob
 import hashlib
 import os
 
-from macholib.MachO import MachO
+from elfesteem.macho import MACHO
 from typing import BinaryIO, Optional, Tuple
 
 
@@ -68,9 +68,10 @@ def get_bundle_exec(filepath: str) -> Tuple[str, str]:
     """
     filepath = os.path.abspath(filepath)
     if os.path.isfile(filepath):
-        # This is a file, we should check it is a Mach-O. macholib can do this for us
+        # This is a file, we should check it is a Mach-O. elfesteem can do this for us
         # It will raise if it is not
-        macho = MachO(filepath)
+        with open(filepath, "rb") as f:
+            macho = MACHO(f.read())
 
         # Figure out the bundle path
         macos_dir = os.path.dirname(filepath)
