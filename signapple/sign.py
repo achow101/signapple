@@ -2,6 +2,7 @@ import getpass
 import glob
 import os
 import plistlib
+import shutil
 import subprocess
 import re
 import requests
@@ -76,6 +77,11 @@ PAGE_SIZES = {
 CPU_NAMES = {
     0x01000007: "x86_64",  # AMD64
     0x0100000C: "arm64",  # ARM64
+}
+
+CPU_NAME_TO_TYPE = {
+    "x86_64": 0x01000007,  # AMD64
+    "arm64": 0x0100000C,  # ARM64
 }
 
 # Lookup table for the Log2 page size that is put in the CodeDirectory
@@ -509,10 +515,11 @@ class SingleCodeSigner(object):
             target_file = os.path.join(
                 target_dir,
                 os.path.basename(self.filename)
-                + f".{CPU_NAMES[self.macho.Mhdr.cputype]}.sign",
+                + f".{CPU_NAMES[self.macho.Mhdr.cputype]}sign",
             )
             with open(target_file, "wb") as tf:
                 tf.write(f.getvalue())
+                self.files_modified.append(target_file)
         else:
             # Set the section's content to be the signature
             cs_sec.content = StrPatchwork(f.getvalue())
@@ -521,6 +528,43 @@ class SingleCodeSigner(object):
         with open(file_list, "a") as f:
             for l in self.files_modified:
                 f.write(l + "\n")
+
+
+class CodeSignatureAttacher(SingleCodeSigner):
+    def __init__(
+        self,
+        filename: str,
+        macho_index: int,
+        macho: MACHO,
+        sig_path: str,
+    ):
+        self.filename = filename
+        self.macho_index = macho_index
+        self.macho = macho
+        self.sig_path = sig_path
+        self.page_size = PAGE_SIZES[self.macho.Mhdr.cputype]
+
+        with open(self.sig_path, "rb") as f:
+            self.sig_data = f.read()
+
+    def make_code_directory(self):
+        pass
+
+    def get_size_estimate(self):
+        return len(self.sig_data)
+
+    def make_signature(self):
+        """
+        Attaches the signature
+        """
+        # Get the CodeSignature section. It should be the last in the binary
+        cs_sec = self.macho.sect[-1]
+        assert cs_sec == self.get_linkedit_segment().sect[-1]
+        assert isinstance(cs_sec, CodeSignature)
+        sig_cmd = self.get_sig_command()
+
+        # Set the section's content to be the signature
+        cs_sec.content = StrPatchwork(self.sig_data)
 
 
 class CodeSigner(object):
@@ -544,6 +588,9 @@ class CodeSigner(object):
         self.code_signers: List[SingleCodeSigner] = []
 
         self.files_modified: List[str] = []
+
+        with open(self.filename, "rb") as f:
+            self.macho = MACHO(f.read())
 
     def _hash_name(self) -> str:
         """
@@ -691,7 +738,7 @@ class CodeSigner(object):
             plistlib.dump(resources, f, fmt=plistlib.FMT_XML)
             self.files_modified.append(cr_path)
 
-    def _allocate(self):
+    def allocate(self):
         for cs in self.code_signers:
             # Get fresh calculations of offset and size
             sig_offset = cs.calculate_sig_offset()
@@ -741,10 +788,8 @@ class CodeSigner(object):
         """
         # Open the MachO and prepare the code signer for each embedded binary
         # Get all of the size estimates
-        with open(self.filename, "rb") as f:
-            macho = MACHO(f.read())
         arch_sizes: Dict[int, int] = {}  # cputype: sig size
-        for i, h in enumerate(get_macho_list(macho)):
+        for i, h in enumerate(get_macho_list(self.macho)):
             cs = SingleCodeSigner(
                 self.filename,
                 i,
@@ -762,29 +807,33 @@ class CodeSigner(object):
         for cs in self.code_signers:
             cs.make_code_directory()
 
+        self.apply_signature()
+
+    def apply_signature(self):
         # Allocate space in the binary for all of the signatures
-        self._allocate()
+        self.allocate()
 
         # Make the final signatures and add it to the binaries
         for cs in self.code_signers:
             cs.make_signature()
 
-        # Fix the fat header because offsets may have moved
-        if hasattr(macho, "Fhdr"):
-            for cs in self.code_signers:
-                macho.fh[cs.macho_index].size = len(cs.macho.pack())
-            p = 0
-            for h, m in zip(macho.fh, macho.arch.macholist):
-                if p > h.offset:
-                    h.offset = round_up(p, 2 ** h.align)
-                    m.offset = h.offset
-                p = h.offset + h.size
+        if not self.detach_target:
+            # Fix the fat header because offsets may have moved
+            if hasattr(self.macho, "Fhdr"):
+                for cs in self.code_signers:
+                    self.macho.fh[cs.macho_index].size = len(cs.macho.pack())
+                p = 0
+                for h, m in zip(self.macho.fh, self.macho.arch.macholist):
+                    if p > h.offset:
+                        h.offset = round_up(p, 2 ** h.align)
+                        m.offset = h.offset
+                    p = h.offset + h.size
 
-        # Write out the final macho
-        with open(self.filename, "wb") as f:
-            data = macho.pack()
-            f.write(data)
-            self.files_modified.append(self.filename)
+            # Write out the final macho
+            with open(self.filename, "wb") as f:
+                data = self.macho.pack()
+                f.write(data)
+                self.files_modified.append(self.filename)
 
     def write_file_list(self, file_list: str):
         with open(file_list, "a") as f:
@@ -826,3 +875,60 @@ def sign_mach_o(
 
     if file_list is not None:
         cs.write_file_list(file_list)
+
+
+def apply_sig(filename: str, detach_path: str):
+    """
+    Attach the signature for the bundle of the same name at the detach_path
+    """
+    bundle, filepath = get_bundle_exec(filename)
+    detach_bundle = os.path.join(detach_path, os.path.basename(bundle))
+
+    bin_code_signers: Dict[str, CodeSigner] = {}
+
+    for file_path in glob.iglob(os.path.join(detach_bundle, "**"), recursive=True):
+        if os.path.isdir(file_path):
+            continue
+        bundle_relpath = os.path.relpath(file_path, detach_bundle)
+        bundle_path = os.path.join(bundle, bundle_relpath)
+
+        if os.path.basename(os.path.dirname(file_path)) == "MacOS":
+            # Signature files are only in the MacOS dir
+            if file_path.endswith("sign"):
+                bin_name, ext = os.path.splitext(file_path)
+                arch_type = CPU_NAME_TO_TYPE[ext[1:-4]]
+
+                bundle_relpath = os.path.relpath(bin_name, detach_bundle)
+                bundle_path = os.path.join(bundle, bundle_relpath)
+
+                if bin_name not in bin_code_signers:
+                    bin_code_signers[bin_name] = CodeSigner(
+                        bundle_path, Certificate(), PrivateKeyInfo()
+                    )
+                bcs = bin_code_signers[bin_name]
+
+                # Figure out which index this sig is for
+                idx = 0
+                macho = bcs.macho
+                if hasattr(bcs.macho, "Fhdr"):
+                    for i, h in enumerate(bcs.macho.fh):
+                        if h.cputype == arch_type:
+                            idx = i
+                            macho = bcs.macho.arch[i]
+                            break
+
+                # Create a CodeSignatureAttacher
+                csa = CodeSignatureAttacher(bundle_path, idx, macho, file_path)
+
+                # Add it to the CodeSigner
+                bcs.code_signers.append(csa)
+
+                continue
+
+    # Non-signature files are just copied over
+    os.makedirs(os.path.dirname(bundle_path), exist_ok=True)
+    shutil.copyfile(file_path, bundle_path)
+
+    # Apply the signature for all CodeSigners
+    for _, cs in bin_code_signers.items():
+        cs.apply_signature()
