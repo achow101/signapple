@@ -41,7 +41,9 @@ def main():
         description="Signs and verifies MacOS code signatures"
     )
 
-    subparsers = parser.add_subparsers(help="Commands", dest="command", required=True)
+    subparsers = parser.add_subparsers(help="Commands", dest="command")
+    # Python >=3.7 has a required karg in add_subparsers. But since we need to support 3.6, this hack is the only way
+    subparsers.required = True
 
     verify_subparser = subparsers.add_parser(
         "verify", help="Verify the code signature for a binary"

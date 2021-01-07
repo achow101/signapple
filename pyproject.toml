@@ -6,7 +6,7 @@ authors = ["Andrew Chow <achow101-github@achow101.com>"]
 license = "MIT License"
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.6"
 asn1crypto = "^1.4.0"
 macholib = "^1.14"
 oscrypto = "^1.2.1"
