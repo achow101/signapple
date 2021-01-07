@@ -99,7 +99,9 @@ def main():
         action="store_false",
         dest="verify",
     )
-    apply_subparser.add_argument("filename", help="The binary to attach the signature to")
+    apply_subparser.add_argument(
+        "filename", help="The binary to attach the signature to"
+    )
     apply_subparser.add_argument(
         "sig",
         help="The directory containing the detached signature. The same path that was given to --detach during signing",

@@ -10,7 +10,7 @@ install_requires = [
     "certvalidator @ "
     "git+https://github.com/achow101/certvalidator.git@allow-more-criticals",
     "elf-esteem @ "
-    "git+https://github.com/achow101/elfesteem.git@36f426c5fa5c344620669916e8b723a0b030a3d5",
+    "git+https://github.com/LRGH/elfesteem.git@87bbd79ab7e361004c98cc8601d4e5f029fd8bd5",
     "macholib>=1.14,<2.0",
     "oscrypto>=1.2.1,<2.0.0",
     "requests>=2.25.1,<3.0.0",
@@ -32,7 +32,7 @@ setup_kwargs = {
     "package_data": package_data,
     "install_requires": install_requires,
     "entry_points": entry_points,
-    "python_requires": ">=3.8,<4.0",
+    "python_requires": ">=3.6,<4.0",
 }
 
 

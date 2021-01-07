@@ -911,7 +911,9 @@ def apply_sig(filename: str, detach_path: str):
                 macho = bcs.macho
                 if hasattr(bcs.macho, "Fhdr"):
                     if ext == ".sign":
-                        raise Exception("Cannot attach single architecture signature to universal binary")
+                        raise Exception(
+                            "Cannot attach single architecture signature to universal binary"
+                        )
                     arch_type = CPU_NAME_TO_TYPE[ext[1:-4]]
                     for i, h in enumerate(bcs.macho.fh):
                         if h.cputype == arch_type:
