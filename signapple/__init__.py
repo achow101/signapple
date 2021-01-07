@@ -76,6 +76,12 @@ def main():
     sign_subparser.add_argument(
         "--detach", help="Detach the signature and write it to this path"
     )
+    sign_subparser.add_argument(
+        "--no-verify",
+        help="Don't verify the signature after creating.",
+        action="store_false",
+        dest="verify",
+    )
     sign_subparser.set_defaults(func=sign)
 
     dump_subparser = subparsers.add_parser(
