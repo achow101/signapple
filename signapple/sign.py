@@ -73,6 +73,11 @@ PAGE_SIZES = {
     0x0100000C: 0x4000,  # ARM64
 }
 
+CPU_NAMES = {
+    0x01000007: "x86_64",  # AMD64
+    0x0100000C: "arm64",  # ARM64
+}
+
 # Lookup table for the Log2 page size that is put in the CodeDirectory
 CODE_DIR_PAGE_SIZES = {
     0x1000: 12,
@@ -264,18 +269,25 @@ class SingleCodeSigner(object):
         reqs_path: Optional[str] = None,
         ents_path: Optional[str] = None,
         force: bool = False,
+        detach_target: Optional[str] = None,
     ):
         self.filename: str = filename
         self.macho_index: int = macho_index
         self.macho: MACHO = macho
         self.cert: Certificate = cert
         self.privkey: PrivateKeyInfo = privkey
+        self.detach_target = detach_target
 
         self.content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
         self.info_file_path = os.path.join(self.content_dir, "Info.plist")
         self.res_dir_path = os.path.join(
             self.content_dir, "_CodeSignature", "CodeResources"
         )
+        if self.detach_target:
+            self.res_dir_path = os.path.join(
+                self.detach_target, "Contents", "_CodeSignature", "CodeResources"
+            )
+
         self.reqs_path = reqs_path
         self.ents_path = ents_path
 
@@ -370,10 +382,9 @@ class SingleCodeSigner(object):
             self.sig.code_dir_blob.code_hashes.append(get_hash(data, self.hash_type))
 
     def _set_code_res_hash(self):
-        code_res_path = os.path.join(
-            self.content_dir, "_CodeSignature", "CodeResources"
+        self.sig.code_dir_blob.res_dir_hash = hash_file(
+            self.res_dir_path, self.hash_type
         )
-        self.sig.code_dir_blob.res_dir_hash = hash_file(code_res_path, self.hash_type)
 
     def make_code_directory(self):
         build_meta = [
@@ -487,11 +498,24 @@ class SingleCodeSigner(object):
         assert isinstance(cs_sec, CodeSignature)
         sig_cmd = self.get_sig_command()
 
-        # Modify it's contents to be the signature
+        # Serialize the signature
         f = BytesIO()
         self.sig.serialize(f)
         f.write((sig_cmd.datasize - f.tell()) * b"\x00")
-        cs_sec.content = StrPatchwork(f.getvalue())
+
+        if self.detach_target:
+            target_dir = os.path.join(self.detach_target, "Contents", "MacOS")
+            os.makedirs(target_dir, exist_ok=True)
+            target_file = os.path.join(
+                target_dir,
+                os.path.basename(self.filename)
+                + f".{CPU_NAMES[self.macho.Mhdr.cputype]}.sign",
+            )
+            with open(target_file, "wb") as tf:
+                tf.write(f.getvalue())
+        else:
+            # Set the section's content to be the signature
+            cs_sec.content = StrPatchwork(f.getvalue())
 
     def write_file_list(self, file_list: str):
         with open(file_list, "a") as f:
@@ -506,12 +530,14 @@ class CodeSigner(object):
         cert: Certificate,
         privkey: PrivateKeyInfo,
         force: bool = False,
+        detach_target: Optional[str] = None,
     ):
         self.filename = filename
         self.content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
         self.cert = cert
         self.privkey = privkey
         self.force = force
+        self.detach_target = detach_target
 
         self.hash_type = 2
 
@@ -655,8 +681,12 @@ class CodeSigner(object):
         resources["rules2"] = rules["rules2"]
 
         # Make the _CodeSignature folder and write out the resources file
-        os.makedirs(code_sig_dir, exist_ok=True)
-        cr_path = os.path.join(code_sig_dir, "CodeResources")
+        if self.detach_target:
+            target_dir = os.path.join(self.detach_target, "Contents", "_CodeSignature")
+        else:
+            target_dir = code_sig_dir
+        os.makedirs(target_dir, exist_ok=True)
+        cr_path = os.path.join(target_dir, "CodeResources")
         with open(cr_path, "wb") as f:
             plistlib.dump(resources, f, fmt=plistlib.FMT_XML)
             self.files_modified.append(cr_path)
@@ -716,7 +746,13 @@ class CodeSigner(object):
         arch_sizes: Dict[int, int] = {}  # cputype: sig size
         for i, h in enumerate(get_macho_list(macho)):
             cs = SingleCodeSigner(
-                self.filename, i, h, self.cert, self.privkey, force=self.force
+                self.filename,
+                i,
+                h,
+                self.cert,
+                self.privkey,
+                force=self.force,
+                detach_target=self.detach_target,
             )
             self.code_signers.append(cs)
 
@@ -765,6 +801,7 @@ def sign_mach_o(
     passphrase: Optional[str] = None,
     force: bool = False,
     file_list: Optional[str] = None,
+    detach_target: Optional[str] = None,
 ):
     """
     Code sign a Mach-O binary in place
@@ -779,8 +816,12 @@ def sign_mach_o(
     with open(p12_path, "rb") as f:
         privkey, cert, _ = parse_pkcs12(f.read(), pass_bytes)
 
+    # Include the bundle name in the detached target
+    if detach_target:
+        detach_target = os.path.join(detach_target, os.path.basename(bundle))
+
     # Sign
-    cs = CodeSigner(filepath, cert, privkey, force=force)
+    cs = CodeSigner(filepath, cert, privkey, force=force, detach_target=detach_target)
     cs.make_signature()
 
     if file_list is not None:

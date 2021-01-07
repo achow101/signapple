@@ -13,7 +13,12 @@ def verify(args):
 
 def sign(args):
     sign_mach_o(
-        args.filename, args.keypath, args.passphrase, args.force, args.file_list
+        args.filename,
+        args.keypath,
+        args.passphrase,
+        args.force,
+        args.file_list,
+        args.detach,
     )
     print("Code signature created")
 
@@ -58,6 +63,9 @@ def main():
     )
     sign_subparser.add_argument(
         "--file-list", help="Path to write out the list of modified files to"
+    )
+    sign_subparser.add_argument(
+        "--detach", help="Detach the signature and write it to this path"
     )
     sign_subparser.set_defaults(func=sign)
 
