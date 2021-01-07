@@ -21,6 +21,8 @@ def sign(args):
         args.detach,
     )
     print("Code signature created")
+    if args.verify and not args.detach:
+        verify(args)
 
 
 def dump(args):
@@ -28,8 +30,10 @@ def dump(args):
 
 
 def apply(args):
-    apply_sig(args.target, args.sig)
+    apply_sig(args.filename, args.sig)
     print("Code signature applied")
+    if args.verify:
+        verify(args)
 
 
 def main():
@@ -87,7 +91,7 @@ def main():
         action="store_false",
         dest="verify",
     )
-    apply_subparser.add_argument("target", help="The binary to attach the signature to")
+    apply_subparser.add_argument("filename", help="The binary to attach the signature to")
     apply_subparser.add_argument(
         "sig",
         help="The directory containing the detached signature. The same path that was given to --detach during signing",
