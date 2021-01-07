@@ -98,9 +98,9 @@ develop = false
 
 [package.source]
 type = "git"
-url = "https://github.com/achow101/elfesteem.git"
-reference = "f4d0f288da28bd3e52d61ade75aa42fc872f8376"
-resolved_reference = "f4d0f288da28bd3e52d61ade75aa42fc872f8376"
+url = "https://github.com/LRGH/elfesteem.git"
+reference = "87bbd79ab7e361004c98cc8601d4e5f029fd8bd5"
+resolved_reference = "87bbd79ab7e361004c98cc8601d4e5f029fd8bd5"
 
 [[package]]
 name = "idna"
@@ -230,7 +230,7 @@ socks = ["PySocks (>=1.5.6,!=1.5.7,<2.0)"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8"
-content-hash = "01f112e39fedc68ff68b65fac7a74e639b1bb37c09b263bbf805fc8a6d28b8d8"
+content-hash = "9046266017c9bdb4ee56a316f4d6846e1e38b360365495a4e3a7da8976bff773"
 
 [metadata.files]
 altgraph = [

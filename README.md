@@ -16,7 +16,7 @@ Additionally, once all of the dependencies are installed, `codesign.py` will pro
 If you want to install dependencies manually, the dependencies are:
 * [asn1crypto](https://github.com/wbond/asn1crypto/) - Certificate and CMS parsing
 * [oscrypto](https://github.com/wbond/oscrypto/) - Cryptographic signature creation and verification
-* [elfesteem](https://github.com/achow101/elfesteem) - Mach-O binary manipulation. Note that this is a specifically modified version to fix some issues.
+* [elfesteem](https://github.com/LRGH/elfesteem) - Mach-O binary manipulation.
 * [certvalidator](https://github.com/achow101/certvalidator/tree/allow-more-criticals) - Certificate chain validation. Note that this is a specifically modified version to allow for Apple specific extensions.
 * [requests](https://requests.readthedocs.io/en/master/) - HTTP transport for RFC 3161 timestamping
 
