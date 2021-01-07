@@ -16,14 +16,9 @@ Additionally, once all of the dependencies are installed, `codesign.py` will pro
 If you want to install dependencies manually, the dependencies are:
 * [asn1crypto](https://github.com/wbond/asn1crypto/) - Certificate and CMS parsing
 * [oscrypto](https://github.com/wbond/oscrypto/) - Cryptographic signature creation and verification
-* [macholib](https://github.com/ronaldoussoren/macholib) - Parsing Mach-O binaries
+* [elfesteem](https://github.com/achow101/elfesteem) - Mach-O binary manipulation. Note that this is a specifically modified version to fix some issues.
 * [certvalidator](https://github.com/achow101/certvalidator/tree/allow-more-criticals) - Certificate chain validation. Note that this is a specifically modified version to allow for Apple specific extensions.
 * [requests](https://requests.readthedocs.io/en/master/) - HTTP transport for RFC 3161 timestamping
-
-Additionally you must have the `codesign_allocate` tool compiled and accessible.
-`signapple` uses `codesign_allocate` in order to allocate space in a binary for the signature.
-Set the path to this tool using the `CODESIGN_ALLOCATE` environment variable.
-If you do not have this tool, it can be compiled from [cctools-port](https://github.com/tpoechtrager/cctools-port/).
 
 ## Usage
 
@@ -37,18 +32,20 @@ Any paths can be either to the bundle directory or to the binary itself.
 The full usage is as follows:
 ```
 $ signapple --help
-usage: signapple [-h] {verify,sign,dump} ...
+usage: signapple [-h] {verify,sign,dump,apply} ...
 
 Signs and verifies MacOS code signatures
 
 positional arguments:
-  {verify,sign,dump}  Commands
-    verify            Verify the code signature for a binary
-    sign              Create a code signature for a binary
-    dump              Dump the code signature for a binary
+  {verify,sign,dump,apply}
+                        Commands
+    verify              Verify the code signature for a binary
+    sign                Create a code signature for a binary
+    dump                Dump the code signature for a binary
+    apply               Apply a detached signature
 
 optional arguments:
-  -h, --help          show this help message and exit
+  -h, --help            show this help message and exit
 
 $ signapple verify --help
 usage: signapple verify [-h] filename
@@ -60,7 +57,7 @@ optional arguments:
   -h, --help  show this help message and exit
 
 $ signapple sign --help
-usage: signapple sign [-h] [--passphrase PASSPHRASE] [--force] [--file-list FILE_LIST] keypath filename
+usage: signapple sign [-h] [--passphrase PASSPHRASE] [--force] [--file-list FILE_LIST] [--detach DETACH] [--no-verify] keypath filename
 
 positional arguments:
   keypath               Path to the PKCS#12 archive containing the certificate and private key to sign with
@@ -73,7 +70,10 @@ optional arguments:
   --force, -f           Ignore existing signatures. Otherwise if an existing signature is found, no signing will occur
   --file-list FILE_LIST
                         Path to write out the list of modified files to
-$  signapple dump --help
+  --detach DETACH       Detach the signature and write it to this path
+  --no-verify           Don't verify the signature after creating.
+
+$ signapple dump --help
 usage: signapple dump [-h] filename
 
 positional arguments:
@@ -81,6 +81,17 @@ positional arguments:
 
 optional arguments:
   -h, --help  show this help message and exit
+
+$ signapple apply --help
+usage: signapple apply [-h] [--no-verify] filename sig
+
+positional arguments:
+  filename     The binary to attach the signature to
+  sig          The directory containing the detached signature. The same path that was given to --detach during signing
+
+optional arguments:
+  -h, --help   show this help message and exit
+  --no-verify  Don't verify the signature after attaching
 ```
 
 ## Signing certificates
@@ -89,6 +100,16 @@ In order to sign, you must have a signing certificate.
 This is obtained from Apple.
 These certificates can then be exported as PKCS#12 files to be used with `signapple`.
 Please read the [documentation](docs/certificates.md) for more information about certificates.
+
+## Detached signatures
+
+The detached signatures that `signapple` creates are not the same detached signatures that Apple's `codesign` creates.
+Instead these detached signatures are intended to be attached to the original unsigned binary at a later date.
+The signatures will be placed into the target directory with a directory structure that mirrors the structure of the original application bundle.
+Any generated files (such as `Contents/_CodeSignature/CodeResources`) will be found there.
+The signatures will just be the embedded signature with saved in a file that has the same name as the original binary but with an extension of the format `.<arch>sign` where `<arch>` is the name of the machine architecture for that signed binary.
+In the case of universal binaries, there will multiple such signatures.
+Typically there will be `.x86_64sign` and `.arm64sign` files for universal binaries.
 
 ## License
 
