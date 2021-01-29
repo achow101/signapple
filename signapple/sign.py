@@ -929,9 +929,9 @@ def apply_sig(filename: str, detach_path: str):
 
                 continue
 
-    # Non-signature files are just copied over
-    os.makedirs(os.path.dirname(bundle_path), exist_ok=True)
-    shutil.copyfile(file_path, bundle_path)
+        # Non-signature files are just copied over
+        os.makedirs(os.path.dirname(bundle_path), exist_ok=True)
+        shutil.copyfile(file_path, bundle_path)
 
     # Apply the signature for all CodeSigners
     for _, cs in bin_code_signers.items():
