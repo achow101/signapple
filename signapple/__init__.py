@@ -1,7 +1,7 @@
 import argparse
 
 
-from .dump import dump_mach_o_signature
+from .dump import dump_mach_o_signature, dump_sigfile
 from .verify import verify_mach_o_signature
 from .sign import apply_sig, sign_mach_o
 
@@ -26,7 +26,10 @@ def sign(args):
 
 
 def dump(args):
-    dump_mach_o_signature(args.filename)
+    if args.sigfile:
+        dump_sigfile(args.filename)
+    else:
+        dump_mach_o_signature(args.filename)
 
 
 def apply(args):
@@ -90,6 +93,11 @@ def main():
         "dump", help="Dump the code signature for a binary"
     )
     dump_subparser.add_argument("filename", help="Path to the binary to dump")
+    dump_subparser.add_argument(
+        "--sigfile",
+        help="The path is to a detached signature file produced by 'sign --detach' rather than a signed binary",
+        action="store_true",
+    )
     dump_subparser.set_defaults(func=dump)
 
     apply_subparser = subparsers.add_parser("apply", help="Apply a detached signature")
