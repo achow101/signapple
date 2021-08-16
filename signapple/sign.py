@@ -920,6 +920,12 @@ def apply_sig(filename: str, detach_path: str):
                             idx = i
                             macho = bcs.macho.arch[i]
                             break
+                else:
+                    # For thin binaries, make sure only one signature is being attached
+                    if len(bcs.code_signers) > 0:
+                        raise Exception(
+                            "Signature already being attached to thin binary"
+                        )
 
                 # Create a CodeSignatureAttacher
                 csa = CodeSignatureAttacher(bundle_path, idx, macho, file_path)
