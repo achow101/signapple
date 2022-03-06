@@ -921,11 +921,13 @@ def apply_sig(filename: str, detach_path: str):
                             macho = bcs.macho.arch[i]
                             break
                 else:
-                    # For thin binaries, make sure only one signature is being attached
-                    if len(bcs.code_signers) > 0:
-                        raise Exception(
-                            "Signature already being attached to thin binary"
-                        )
+                    # For thin binaries, choose the signature that matches the arch
+                    # if the arch is specified
+                    assert(hasattr(macho, "Mhdr"))
+                    if ext != ".sign":
+                        arch_type = CPU_NAME_TO_TYPE[ext[1:-4]]
+                        if macho.Mhdr.cputype != arch_type:
+                            continue
 
                 # Create a CodeSignatureAttacher
                 csa = CodeSignatureAttacher(bundle_path, idx, macho, file_path)
