@@ -3,7 +3,7 @@ import argparse
 
 from .dump import dump_mach_o_signature, dump_sigfile
 from .verify import verify_mach_o_signature
-from .sign import apply_sig, sign_mach_o
+from .sign import apply_sig, sign_mach_o, SigningStatus
 
 
 def verify(args):
@@ -33,10 +33,17 @@ def dump(args):
 
 
 def apply(args):
-    apply_sig(args.filename, args.sig)
-    print("Code signature applied")
-    if args.verify:
-        verify(args)
+    ret = apply_sig(args.filename, args.sig)
+    if ret == SigningStatus.OK:
+        print("Code signature applied")
+        if args.verify:
+            verify(args)
+    elif ret == SigningStatus.FAIL:
+        print("Failed to apply code signature")
+    elif ret == SigningStatus.SOME_OK:
+        print("Some code signatures applied")
+    else:
+        assert False
 
 
 def main():

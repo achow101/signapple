@@ -38,6 +38,7 @@ from elfesteem.macho import (
     segment_command,
 )
 from elfesteem.strpatchwork import StrPatchwork
+from enum import Enum
 from io import BytesIO
 from math import log2
 from oscrypto.asymmetric import load_private_key, rsa_pkcs1v15_sign
@@ -92,6 +93,12 @@ CODE_DIR_PAGE_SIZES = {
 
 
 TIMESTAMP_SERVER = "http://timestamp.apple.com/ts01"
+
+
+class SigningStatus(Enum):
+    OK = 1
+    FAIL = 2
+    SOME_OK = 3
 
 
 class HashAgility(Sequence):
@@ -810,6 +817,9 @@ class CodeSigner(object):
         self.apply_signature()
 
     def apply_signature(self):
+        if len(self.code_signers) == 0:
+            raise Exception(f"No signatures to apply to {self.filename}")
+
         # Allocate space in the binary for all of the signatures
         self.allocate()
 
@@ -877,7 +887,7 @@ def sign_mach_o(
         cs.write_file_list(file_list)
 
 
-def apply_sig(filename: str, detach_path: str):
+def apply_sig(filename: str, detach_path: str) -> SigningStatus:
     """
     Attach the signature for the bundle of the same name at the detach_path
     """
@@ -923,7 +933,7 @@ def apply_sig(filename: str, detach_path: str):
                 else:
                     # For thin binaries, choose the signature that matches the arch
                     # if the arch is specified
-                    assert(hasattr(macho, "Mhdr"))
+                    assert hasattr(macho, "Mhdr")
                     if ext != ".sign":
                         arch_type = CPU_NAME_TO_TYPE[ext[1:-4]]
                         if macho.Mhdr.cputype != arch_type:
@@ -942,5 +952,19 @@ def apply_sig(filename: str, detach_path: str):
         shutil.copyfile(file_path, bundle_path)
 
     # Apply the signature for all CodeSigners
+    ret = None
     for _, cs in bin_code_signers.items():
-        cs.apply_signature()
+        try:
+            cs.apply_signature()
+            if ret is None:
+                ret = SigningStatus.OK
+            elif ret == SigningStatus.FAIL:
+                ret = SigningStatus.SOME_OK
+        except Exception as e:
+            print(str(e))
+            if ret is None:
+                ret = SigningStatus.FAIL
+            elif ret == SigningStatus.OK:
+                ret = SigningStatus.SOME_OK
+    assert ret is not None
+    return ret
