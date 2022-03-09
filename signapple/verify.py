@@ -218,7 +218,7 @@ def _verify_single(filename: str, h: MACHO):
 def verify_mach_o_signature(filename: str):
     bundle, filepath = get_bundle_exec(filename)
     with open(filepath, "rb") as f:
-        m = MACHO(f.read())
+        m = MACHO(f.read(), parseSymbols=False)
 
     # There may be multiple headers because it might be a universal binary
     # In that case, each architecture is essentially just another MachO binary inside of the

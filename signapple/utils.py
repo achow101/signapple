@@ -71,7 +71,7 @@ def get_bundle_exec(filepath: str) -> Tuple[str, str]:
         # This is a file, we should check it is a Mach-O. elfesteem can do this for us
         # It will raise if it is not
         with open(filepath, "rb") as f:
-            macho = MACHO(f.read())
+            macho = MACHO(f.read(), parseSymbols=False)
 
         # Figure out the bundle path
         macos_dir = os.path.dirname(filepath)

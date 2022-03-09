@@ -45,7 +45,7 @@ def _dump_single(filename: str, b: MACHO):
 def dump_mach_o_signature(filename):
     bundle, filepath = get_bundle_exec(filename)
     with open(filepath, "rb") as f:
-        macho = MACHO(f.read())
+        macho = MACHO(f.read(), parseSymbols=False)
 
     for header in get_macho_list(macho):
         _dump_single(filepath, header)
@@ -69,7 +69,7 @@ def _get_cpu_type_string(cpu_type):
 
 def get_binary_info(filename):
     with open(filename, "rb") as f:
-        macho = MACHO(f.read())
+        macho = MACHO(f.read(), parseSymbols=False)
 
     if hasattr(macho, "Fhdr"):
         print("Universal Binary")

@@ -597,7 +597,7 @@ class CodeSigner(object):
         self.files_modified: List[str] = []
 
         with open(self.filename, "rb") as f:
-            self.macho = MACHO(f.read())
+            self.macho = MACHO(f.read(), parseSymbols=False)
 
     def _hash_name(self) -> str:
         """
