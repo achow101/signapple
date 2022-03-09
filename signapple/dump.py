@@ -1,4 +1,11 @@
-from elfesteem.macho import MACHO, LC_CODE_SIGNATURE
+from elfesteem.macho import (
+    MACHO,
+    LC_CODE_SIGNATURE,
+    CPU_TYPE_I386,
+    CPU_TYPE_X86_64,
+    CPU_TYPE_ARM,
+    CPU_TYPE_ARM64,
+)
 from io import BytesIO
 
 from .blobs import EmbeddedSignatureBlob
@@ -15,7 +22,7 @@ def _dump_signature(s: BytesIO):
     print(sig_superblob)
 
 
-def _dump_single(filename: str, b: MACHO):
+def _get_code_sig(b: MACHO):
     # Get the offset of the signature from the header
     # It is under the LC_CODE_SIGNATURE command
     sigmeta = [cmd for cmd in b.load.lhlist if cmd.cmd == LC_CODE_SIGNATURE]
@@ -27,8 +34,11 @@ def _dump_single(filename: str, b: MACHO):
     sig_end = sig_lc.dataoff + sig_lc.datasize
 
     sig_data = b.pack()[sig_lc.dataoff : sig_end]
-    v = BytesIO(sig_data)
+    return BytesIO(sig_data)
 
+
+def _dump_single(filename: str, b: MACHO):
+    v = _get_code_sig(b)
     _dump_signature(v)
 
 
@@ -44,3 +54,30 @@ def dump_mach_o_signature(filename):
 def dump_sigfile(filename):
     with open(filename, "rb") as f:
         _dump_signature(f)
+
+
+def _get_cpu_type_string(cpu_type):
+    if cpu_type == CPU_TYPE_I386:
+        return "i386"
+    elif cpu_type == CPU_TYPE_X86_64:
+        return "x86_64"
+    elif cpu_type == CPU_TYPE_ARM:
+        return "arm32"
+    elif cpu_type == CPU_TYPE_ARM64:
+        return "arm64"
+
+
+def get_binary_info(filename):
+    with open(filename, "rb") as f:
+        macho = MACHO(f.read())
+
+    if hasattr(macho, "Fhdr"):
+        print("Universal Binary")
+
+    for header in get_macho_list(macho):
+        print(f"{_get_cpu_type_string(header.Mhdr.cputype)} Executable")
+        try:
+            v = _get_code_sig(header)
+            print("Has code signature")
+        except Exception as e:
+            print(str(e))

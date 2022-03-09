@@ -1,7 +1,7 @@
 import argparse
 
 
-from .dump import dump_mach_o_signature, dump_sigfile
+from .dump import dump_mach_o_signature, dump_sigfile, get_binary_info
 from .verify import verify_mach_o_signature
 from .sign import apply_sig, sign_mach_o, SigningStatus
 
@@ -44,6 +44,10 @@ def apply(args):
         print("Some code signatures applied")
     else:
         assert False
+
+
+def bininfo(args):
+    get_binary_info(args.filename)
 
 
 def main():
@@ -122,6 +126,14 @@ def main():
         help="The directory containing the detached signature. The same path that was given to --detach during signing",
     )
     apply_subparser.set_defaults(func=apply)
+
+    info_subparser = subparsers.add_parser(
+        "info", help="Get information about the binary"
+    )
+    info_subparser.add_argument(
+        "filename", help="The binary (or bundle) to get information about"
+    )
+    info_subparser.set_defaults(func=bininfo)
 
     args = parser.parse_args()
     args.func(args)
