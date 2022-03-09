@@ -283,6 +283,7 @@ class SingleCodeSigner(object):
         ents_path: Optional[str] = None,
         force: bool = False,
         detach_target: Optional[str] = None,
+        hardened_runtime: bool = False,
     ):
         self.filename: str = filename
         self.macho_index: int = macho_index
@@ -290,6 +291,7 @@ class SingleCodeSigner(object):
         self.cert: Certificate = cert
         self.privkey: PrivateKeyInfo = privkey
         self.detach_target = detach_target
+        self.hardened_runtime = hardened_runtime
 
         self.content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
         self.info_file_path = os.path.join(self.content_dir, "Info.plist")
@@ -403,11 +405,9 @@ class SingleCodeSigner(object):
         build_meta = [
             cmd for cmd in self.macho.load.lhlist if cmd.cmd == LC_BUILD_VERSION
         ]
-        if len(build_meta) == 0:
-            platform = 0
-        else:
-            assert len(build_meta) == 1
-            platform = build_meta[0].platform
+        assert len(build_meta) == 1
+        platform = build_meta[0].platform
+        sdk = build_meta[0].sdk
 
         self.sig.code_dir_blob = CodeDirectoryBlob()
 
@@ -430,6 +430,16 @@ class SingleCodeSigner(object):
 
         self.sig.code_dir_blob.ident = self.ident.encode()
         self.sig.code_dir_blob.team_id = self.team_id.encode()
+
+        # Set things for hardened runtime
+        if self.hardened_runtime:
+            # Version must be at least PRE_ENCRYPT
+            if self.sig.code_dir_blob.version < CodeDirectoryBlob.CDVersion.PRE_ENCRYPT:
+                self.sig.code_dir_blob.version = CodeDirectoryBlob.CDVersion.PRE_ENCRYPT
+            # Hardened runtime flag must be set
+            self.sig.code_dir_blob.flags |= CodeDirectoryBlob.Flags.HARDENED_RUNTIME
+            # Runtime version must be the SDK version
+            self.sig.code_dir_blob.runtime = sdk
 
         # Do the special hashes first
         self._set_info_hash()
@@ -582,6 +592,7 @@ class CodeSigner(object):
         privkey: PrivateKeyInfo,
         force: bool = False,
         detach_target: Optional[str] = None,
+        hardened_runtime: bool = True,
     ):
         self.filename = filename
         self.content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
@@ -589,6 +600,7 @@ class CodeSigner(object):
         self.privkey = privkey
         self.force = force
         self.detach_target = detach_target
+        self.hardened_runtime = hardened_runtime
 
         self.hash_type = 2
 
@@ -805,6 +817,7 @@ class CodeSigner(object):
                 self.privkey,
                 force=self.force,
                 detach_target=self.detach_target,
+                hardened_runtime=self.hardened_runtime,
             )
             self.code_signers.append(cs)
 
@@ -861,6 +874,7 @@ def sign_mach_o(
     force: bool = False,
     file_list: Optional[str] = None,
     detach_target: Optional[str] = None,
+    hardened_runtime: bool = False,
 ):
     """
     Code sign a Mach-O binary in place
@@ -880,7 +894,14 @@ def sign_mach_o(
         detach_target = os.path.join(detach_target, os.path.basename(bundle))
 
     # Sign
-    cs = CodeSigner(filepath, cert, privkey, force=force, detach_target=detach_target)
+    cs = CodeSigner(
+        filepath,
+        cert,
+        privkey,
+        force=force,
+        detach_target=detach_target,
+        hardened_runtime=hardened_runtime,
+    )
     cs.make_signature()
 
     if file_list is not None:

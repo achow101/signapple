@@ -115,6 +115,9 @@ class CodeDirectoryBlob(Blob):
 
         LATEST = PRE_ENCRYPT
 
+    class Flags(IntEnum):
+        HARDENED_RUNTIME = 0x10000
+
     def __init__(self):
         super().__init__(0xFADE0C02)
 

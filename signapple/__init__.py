@@ -19,6 +19,7 @@ def sign(args):
         args.force,
         args.file_list,
         args.detach,
+        args.hardened_runtime,
     )
     print("Code signature created")
     if args.verify and not args.detach:
@@ -97,6 +98,11 @@ def main():
         help="Don't verify the signature after creating.",
         action="store_false",
         dest="verify",
+    )
+    sign_subparser.add_argument(
+        "--hardened-runtime",
+        help="Enable Hardened Runtime feature for this binary",
+        action="store_true",
     )
     sign_subparser.set_defaults(func=sign)
 
