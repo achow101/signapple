@@ -406,7 +406,6 @@ class SingleCodeSigner(object):
             cmd for cmd in self.macho.load.lhlist if cmd.cmd == LC_BUILD_VERSION
         ]
         assert len(build_meta) == 1
-        platform = build_meta[0].platform
         sdk = build_meta[0].sdk
 
         self.sig.code_dir_blob = CodeDirectoryBlob()
@@ -416,7 +415,7 @@ class SingleCodeSigner(object):
         self.sig.code_dir_blob.code_limit = self.calculate_sig_offset()
         self.sig.code_dir_blob.hash_size = len(get_hash(b"", self.hash_type))
         self.sig.code_dir_blob.hash_type = self.hash_type
-        self.sig.code_dir_blob.platform = platform
+        self.sig.code_dir_blob.platform = 0 # Not a platform (apple distributed) binary
         self.sig.code_dir_blob.page_size = CODE_DIR_PAGE_SIZES[self.page_size]
         self.sig.code_dir_blob.spare2 = 0
         self.sig.code_dir_blob.scatter_offset = 0
