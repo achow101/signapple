@@ -12,7 +12,7 @@ macholib = "^1.14"
 oscrypto = "^1.2.1"
 certvalidator = { git = "https://github.com/achow101/certvalidator.git", rev = "e5bdb4bfcaa09fa0af355eb8867d00dfeecba08c" }
 requests = "^2.25.1"
-elf-esteem = { git = "https://github.com/LRGH/elfesteem.git", rev = "87bbd79ab7e361004c98cc8601d4e5f029fd8bd5" }
+elf-esteem = { git = "https://github.com/LRGH/elfesteem.git", rev = "5800fcf150dec3ce524f14bc2f24dc037f4826e6" }
 
 [tool.poetry.dev-dependencies]
 black = "^20.8b1"
