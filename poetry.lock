@@ -189,13 +189,20 @@ python-versions = ">=2.7"
 [[package]]
 name = "oscrypto"
 version = "1.3.0"
-description = "TLS (SSL) sockets, key generation, encryption, decryption, signing, verification and KDFs using the OS crypto libraries. Does not require a compiler, and relies on the OS for patching. Works on Windows, OS X and Linux/BSD."
+description = ""
 category = "main"
 optional = false
 python-versions = "*"
+develop = false
 
 [package.dependencies]
 asn1crypto = ">=1.5.1"
+
+[package.source]
+type = "git"
+url = "https://github.com/wbond/oscrypto.git"
+reference = "e90100ecf0cb83fddd9c2461915a8c6fae63c901"
+resolved_reference = "e90100ecf0cb83fddd9c2461915a8c6fae63c901"
 
 [[package]]
 name = "pathspec"
@@ -283,7 +290,7 @@ testing = ["pytest (>=4.6)", "pytest-checkdocs (>=2.4)", "pytest-flake8", "pytes
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.6"
-content-hash = "0bacaa00bbf7f02465d2d4ffb565c0d2c30988ca484ac2d3470dd5df184a3549"
+content-hash = "3fe8b67adf191f0a8dd89e145f0e2d629142f622aef77706155e2ed885042749"
 
 [metadata.files]
 altgraph = []

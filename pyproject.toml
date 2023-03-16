@@ -9,7 +9,7 @@ license = "MIT License"
 python = "^3.6"
 asn1crypto = "^1.4.0"
 macholib = "^1.14"
-oscrypto = "^1.2.1"
+oscrypto = { git = "https://github.com/wbond/oscrypto.git", rev = "e90100ecf0cb83fddd9c2461915a8c6fae63c901" }
 certvalidator = { git = "https://github.com/achow101/certvalidator.git", rev = "e5bdb4bfcaa09fa0af355eb8867d00dfeecba08c" }
 requests = "^2.25.1"
 elf-esteem = { git = "https://github.com/LRGH/elfesteem.git", rev = "5800fcf150dec3ce524f14bc2f24dc037f4826e6" }
