@@ -866,6 +866,14 @@ class CodeSigner(object):
             cs.write_file_list(file_list)
 
 
+def check_cert_validity(cert: Certificate):
+    time_now = datetime.now(timezone.utc)
+    if time_now < cert.not_valid_before:
+        raise Exception(f"Certificate is not yet valid (Not valid before: {cert.not_valid_before}")
+    if time_now > cert.not_valid_after:
+        raise Exception(f"Certificate is expired (Not valid after: {cert.not_valid_after}")
+
+
 def sign_mach_o(
     filename: str,
     p12_path: str,
@@ -887,6 +895,8 @@ def sign_mach_o(
     # Load cert and privkey
     with open(p12_path, "rb") as f:
         privkey, cert, _ = parse_pkcs12(f.read(), pass_bytes)
+
+    check_cert_validity(cert)
 
     # Include the bundle name in the detached target
     if detach_target:
