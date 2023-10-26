@@ -6,17 +6,17 @@ authors = ["Andrew Chow <achow101-github@achow101.com>"]
 license = "MIT License"
 
 [tool.poetry.dependencies]
-python = "^3.6"
+python = "^3.8"
 asn1crypto = "^1.4.0"
 macholib = "^1.14"
-oscrypto = { git = "https://github.com/wbond/oscrypto.git", rev = "e90100ecf0cb83fddd9c2461915a8c6fae63c901" }
+oscrypto = { git = "https://github.com/wbond/oscrypto.git", rev = "1547f535001ba568b239b8797465536759c742a3" }
 certvalidator = { git = "https://github.com/achow101/certvalidator.git", rev = "e5bdb4bfcaa09fa0af355eb8867d00dfeecba08c" }
 requests = "^2.25.1"
 elf-esteem = { git = "https://github.com/LRGH/elfesteem.git", rev = "5800fcf150dec3ce524f14bc2f24dc037f4826e6" }
 
 [tool.poetry.dev-dependencies]
-black = "^20.8b1"
-mypy = "^0.790"
+black = "^23.10"
+mypy = "^1.6"
 
 [tool.poetry.scripts]
 signapple = "signapple:main"
