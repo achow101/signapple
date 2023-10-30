@@ -264,7 +264,9 @@ def get_timestamp_token(digest: bytes, hash_type: int):
 
     # Send tsreq to the server
     headers = {"Content-Type": "application/timestamp-query"}
-    resp = urlopen(Request(TIMESTAMP_SERVER, data=tsreq.dump(), headers=headers, method="POST"))
+    resp = urlopen(
+        Request(TIMESTAMP_SERVER, data=tsreq.dump(), headers=headers, method="POST")
+    )
     tsresp = TimeStampResp.load(resp.read())
 
     return tsresp["time_stamp_token"]
@@ -414,7 +416,7 @@ class SingleCodeSigner(object):
         self.sig.code_dir_blob.code_limit = self.calculate_sig_offset()
         self.sig.code_dir_blob.hash_size = len(get_hash(b"", self.hash_type))
         self.sig.code_dir_blob.hash_type = self.hash_type
-        self.sig.code_dir_blob.platform = 0 # Not a platform (apple distributed) binary
+        self.sig.code_dir_blob.platform = 0  # Not a platform (apple distributed) binary
         self.sig.code_dir_blob.page_size = CODE_DIR_PAGE_SIZES[self.page_size]
         self.sig.code_dir_blob.spare2 = 0
         self.sig.code_dir_blob.scatter_offset = 0
@@ -846,7 +848,7 @@ class CodeSigner(object):
                 p = 0
                 for h, m in zip(self.macho.fh, self.macho.arch.macholist):
                     if p > h.offset:
-                        h.offset = round_up(p, 2 ** h.align)
+                        h.offset = round_up(p, 2**h.align)
                         m.offset = h.offset
                     p = h.offset + h.size
 
@@ -868,9 +870,13 @@ class CodeSigner(object):
 def check_cert_validity(cert: Certificate):
     time_now = datetime.now(timezone.utc)
     if time_now < cert.not_valid_before:
-        raise Exception(f"Certificate is not yet valid (Not valid before: {cert.not_valid_before}")
+        raise Exception(
+            f"Certificate is not yet valid (Not valid before: {cert.not_valid_before}"
+        )
     if time_now > cert.not_valid_after:
-        raise Exception(f"Certificate is expired (Not valid after: {cert.not_valid_after}")
+        raise Exception(
+            f"Certificate is expired (Not valid after: {cert.not_valid_after}"
+        )
 
 
 def sign_mach_o(

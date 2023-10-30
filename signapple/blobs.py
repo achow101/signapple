@@ -160,7 +160,7 @@ class CodeDirectoryBlob(Blob):
         if self.version == 0:
             return "CodeDirectory not setup yet"
 
-        page_size = 2 ** self.page_size
+        page_size = 2**self.page_size
         s = f"CodeDirectoryBlob: version: {hex(self.version)}; flags: {hex(self.flags)}; hashes: {self.count_code}+{self.count_special}; page size: {page_size}\n"
         s += f"hash size: {self.hash_size}; hash type: {self.hash_type}; platform {self.platform}; code limit 64: {self.code_limit_64}\n"
         s += f"exec seg base: {self.exec_seg_base}; exec seg limit: {self.exec_seg_limit}; exec seg flags: {self.exec_seg_flags}; runtime: {hex(self.runtime) if self.runtime is not None else self.runtime}\n"

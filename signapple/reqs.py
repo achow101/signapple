@@ -9,6 +9,7 @@ from .utils import sread
 # The highest byte of the opcode is flags
 OP_FLAG_MASK = 0xFF000000
 
+
 # Requirements op codes
 class ExprOp(IntEnum):
     OP_FALSE = 0  # Unconditionally false

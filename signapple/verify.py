@@ -41,7 +41,7 @@ def _validate_code_hashes(s: BinaryIO, cd_blob: CodeDirectoryBlob):
     assert cd_blob.page_size
     assert cd_blob.hash_type
     assert cd_blob.code_limit
-    page_size = 2 ** cd_blob.page_size
+    page_size = 2**cd_blob.page_size
     read = 0
     for slot_hash in cd_blob.code_hashes:
         to_read = page_size
