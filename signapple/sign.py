@@ -5,7 +5,6 @@ import plistlib
 import shutil
 import subprocess
 import re
-import requests
 
 from asn1crypto.algos import DigestAlgorithmId, SignedDigestAlgorithmId
 from asn1crypto.core import ObjectIdentifier, OctetString, Sequence, SetOf, UTCTime
@@ -44,6 +43,7 @@ from math import log2
 from oscrypto.asymmetric import load_private_key, rsa_pkcs1v15_sign
 from oscrypto.keys import parse_pkcs12, parse_private
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.request import Request, urlopen
 
 from .blobs import (
     EmbeddedSignatureBlob,
@@ -264,9 +264,8 @@ def get_timestamp_token(digest: bytes, hash_type: int):
 
     # Send tsreq to the server
     headers = {"Content-Type": "application/timestamp-query"}
-    resp = requests.post(TIMESTAMP_SERVER, data=tsreq.dump(), headers=headers)
-    resp.raise_for_status()
-    tsresp = TimeStampResp.load(resp.content)
+    resp = urlopen(Request(TIMESTAMP_SERVER, data=tsreq.dump(), headers=headers, method="POST"))
+    tsresp = TimeStampResp.load(resp.read())
 
     return tsresp["time_stamp_token"]
 
