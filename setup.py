@@ -14,8 +14,7 @@ install_requires = \
  'elf-esteem @ '
  'git+https://github.com/LRGH/elfesteem.git@87bbd79ab7e361004c98cc8601d4e5f029fd8bd5',
  'macholib>=1.14,<2.0',
- 'oscrypto>=1.2.1,<2.0.0',
- 'requests>=2.25.1,<3.0.0']
+ 'oscrypto>=1.2.1,<2.0.0']
 
 entry_points = \
 {'console_scripts': ['signapple = signapple:main']}
