@@ -13,7 +13,6 @@ install_requires = \
  'git+https://github.com/achow101/certvalidator.git@e5bdb4bfcaa09fa0af355eb8867d00dfeecba08c',
  'elf-esteem @ '
  'git+https://github.com/LRGH/elfesteem.git@87bbd79ab7e361004c98cc8601d4e5f029fd8bd5',
- 'macholib>=1.14,<2.0',
  'oscrypto>=1.2.1,<2.0.0']
 
 entry_points = \
