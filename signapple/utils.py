@@ -61,7 +61,7 @@ def round_up(n: int, i: int) -> int:
     return ((n // i) + 1) * i
 
 
-def get_bundle_exec(filepath: str) -> Tuple[str, str]:
+def get_bundle_exec(filepath: str) -> Tuple[Optional[str], str]:
     """
     Get the path to the bundle dir (contains the Contents dir) and the executable itself.
     filepath may be the path to the exec, or to the bundle dir.
@@ -76,11 +76,11 @@ def get_bundle_exec(filepath: str) -> Tuple[str, str]:
         # Figure out the bundle path
         macos_dir = os.path.dirname(filepath)
         if os.path.basename(macos_dir) != "MacOS":
-            raise Exception(
-                "File is not in a correctly formatted Bundle. Missing MacOS dir"
-            )
+            # Not in a bundle, return just the binary path
+            return None, filepath
         content_dir = os.path.dirname(macos_dir)
         if os.path.basename(content_dir) != "Contents":
+            # If we got here, then there appears to be a bundle but it's not correctly laid out
             raise Exception(
                 "File is not in a correctly formatted Bundle. Missing Contents dir"
             )
@@ -118,3 +118,23 @@ def get_macho_list(m: MACHO):
         return m.arch
     else:
         return [m]
+
+
+def hash_name(hash_type: int) -> str:
+    """
+    Get the name of the hash function from the integer type
+    """
+    if hash_type == 1:
+        return "sha1"
+    elif hash_type == 2:
+        return "sha256"
+    raise Exception("Unknown hash type")
+
+
+def hash_code_res_name(hash_type: int) -> str:
+    """
+    Get the name of the hash for use in CodeResources
+    """
+    if hash_type == 1:  # SHA1 is just called "hash"
+        return "hash"
+    return f"hash{hash_type}"  # The rest is called "hashn" where n is the type value

@@ -3,7 +3,7 @@ import argparse
 
 from .dump import dump_mach_o_signature, dump_sigfile, get_binary_info
 from .verify import verify_mach_o_signature
-from .sign import apply_sig, sign_mach_o, SigningStatus
+from .sign import apply_sig, sign_macos_app, SigningStatus
 
 
 def verify(args):
@@ -12,7 +12,7 @@ def verify(args):
 
 
 def sign(args):
-    sign_mach_o(
+    sign_macos_app(
         args.filename,
         args.keypath,
         args.passphrase,

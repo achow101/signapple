@@ -42,7 +42,7 @@ from io import BytesIO
 from math import log2
 from oscrypto.asymmetric import load_private_key, rsa_pkcs1v15_sign
 from oscrypto.keys import parse_pkcs12, parse_private
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.request import Request, urlopen
 
 from .blobs import (
@@ -64,7 +64,15 @@ from .reqs import (
     Requirement,
     SingleArgExpr,
 )
-from .utils import get_bundle_exec, get_hash, get_macho_list, hash_file, round_up
+from .utils import (
+    get_bundle_exec,
+    get_hash,
+    get_macho_list,
+    hash_code_res_name,
+    hash_file,
+    hash_name,
+    round_up,
+)
 
 
 HASH_AGILITY_V1_OID = CMSAttributeType("1.2.840.113635.100.9.1")
@@ -272,7 +280,9 @@ def get_timestamp_token(digest: bytes, hash_type: int):
     return tsresp["time_stamp_token"]
 
 
-class SingleCodeSigner(object):
+class SingleBinaryCodeSigner(object):
+    HASH_TYPE = 2  # SHA256
+
     def __init__(
         self,
         filename: str,
@@ -280,8 +290,11 @@ class SingleCodeSigner(object):
         macho: MACHO,
         cert: Certificate,
         privkey: PrivateKeyInfo,
-        reqs_path: Optional[str] = None,
-        ents_path: Optional[str] = None,
+        info_hash: Optional[bytes] = None,
+        reqs_hash: Optional[bytes] = None,
+        ent_hash: Optional[bytes] = None,
+        res_hash: Optional[bytes] = None,
+        ident: Optional[str] = None,
         force: bool = False,
         detach_target: Optional[str] = None,
         hardened_runtime: bool = False,
@@ -293,27 +306,14 @@ class SingleCodeSigner(object):
         self.privkey: PrivateKeyInfo = privkey
         self.detach_target = detach_target
         self.hardened_runtime = hardened_runtime
+        self.info_hash = info_hash
+        self.reqs_hash = reqs_hash
+        self.ent_hash = ent_hash
+        self.res_hash = res_hash
 
-        self.content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
-        self.info_file_path = os.path.join(self.content_dir, "Info.plist")
-        self.res_dir_path = os.path.join(
-            self.content_dir, "_CodeSignature", "CodeResources"
-        )
-        if self.detach_target:
-            self.res_dir_path = os.path.join(
-                self.detach_target, "Contents", "_CodeSignature", "CodeResources"
-            )
-
-        self.reqs_path = reqs_path
-        self.ents_path = ents_path
-
-        with open(self.info_file_path, "rb") as f:
-            self.info = plistlib.load(f, dict_type=OrderedDict)
-        self.ident = self.info["CFBundleIdentifier"]
+        self.ident = ident if ident is not None else os.path.basename(self.filename)
         self.team_id = self.cert.subject.native["organizational_unit_name"]
 
-        self.hash_type = 2  # Use SHA256 hash
-        self.hash_type_str = "sha256"
         self.page_size = PAGE_SIZES[self.macho.Mhdr.cputype]
 
         self.sig = EmbeddedSignatureBlob()
@@ -329,14 +329,13 @@ class SingleCodeSigner(object):
                 )
 
     def _set_info_hash(self):
-        self.sig.code_dir_blob.info_hash = hash_file(
-            self.info_file_path, self.hash_type
-        )
+        if self.info_hash is not None:
+            self.sig.code_dir_blob.info_hash = self.info_hash
 
     def _set_requirements(self):
         assert self.sig.reqs_blob
         assert self.sig.code_dir_blob
-        if self.reqs_path is None:
+        if self.reqs_hash is None:
             # Make default requirements set:
             # designated => identifier "<ident>" and anchor apple generic and leaf[subject.OU] = "<OU>"
             #
@@ -361,22 +360,15 @@ class SingleCodeSigner(object):
                 )
             )
             self.sig.reqs_blob.designated_req = RequirementBlob(r)
+            self.sig.code_dir_blob.reqs_hash = self.sig.reqs_blob.get_hash(
+                self.HASH_TYPE
+            )
         else:
-            with open(reqs_path, "rb") as f:
-                self.sig.reqs_blob.deserialize(f)
-
-        self.sig.code_dir_blob.reqs_hash = self.sig.reqs_blob.get_hash(self.hash_type)
+            self.sig.code_dir_blob.reqs_hash = self.reqs_hash
 
     def _set_entitlements(self):
-        if self.ents_path is None:
-            # There are no default entitlements, just do nothing then
-            return
-        else:
-            assert self.sig.code_dir_blob
-            self.sig.ent_blob = EntitlementsBlob()
-            with open(self.ents_path, "rb") as f:
-                self.sig.ent_blob.deserialize(f)
-            self.sig.code_dir_blob.ent_hash = self.sig.ent_blob.get_hash(self.hash_type)
+        if self.ent_hash is not None:
+            self.sig.code_dir_blob.ent_hash = self.ent_hash
 
     def _set_code_hashes(self):
         assert self.sig.code_dir_blob
@@ -395,12 +387,11 @@ class SingleCodeSigner(object):
 
             data = f.read(to_read)
             read += to_read
-            self.sig.code_dir_blob.code_hashes.append(get_hash(data, self.hash_type))
+            self.sig.code_dir_blob.code_hashes.append(get_hash(data, self.HASH_TYPE))
 
     def _set_code_res_hash(self):
-        self.sig.code_dir_blob.res_dir_hash = hash_file(
-            self.res_dir_path, self.hash_type
-        )
+        if self.res_hash is not None:
+            self.sig.code_dir_blob.res_dir_hash = self.res_hash
 
     def make_code_directory(self):
         build_meta = [
@@ -414,8 +405,8 @@ class SingleCodeSigner(object):
         self.sig.code_dir_blob.version = CodeDirectoryBlob.CDVersion.LATEST
         self.sig.code_dir_blob.flags = 0
         self.sig.code_dir_blob.code_limit = self.calculate_sig_offset()
-        self.sig.code_dir_blob.hash_size = len(get_hash(b"", self.hash_type))
-        self.sig.code_dir_blob.hash_type = self.hash_type
+        self.sig.code_dir_blob.hash_size = len(get_hash(b"", self.HASH_TYPE))
+        self.sig.code_dir_blob.hash_type = self.HASH_TYPE
         self.sig.code_dir_blob.platform = 0  # Not a platform (apple distributed) binary
         self.sig.code_dir_blob.page_size = CODE_DIR_PAGE_SIZES[self.page_size]
         self.sig.code_dir_blob.spare2 = 0
@@ -493,26 +484,26 @@ class SingleCodeSigner(object):
 
         # Make the signature
         signed_attrs: CMSAttributes = make_signed_attrs(
-            self.sig.code_dir_blob.get_hash(self.hash_type), self.hash_type
+            self.sig.code_dir_blob.get_hash(self.HASH_TYPE), self.HASH_TYPE
         )
         actual_privkey = load_private_key(self.privkey)
         signature = rsa_pkcs1v15_sign(
-            actual_privkey, signed_attrs.dump(), self.hash_type_str
+            actual_privkey, signed_attrs.dump(), hash_name(self.HASH_TYPE)
         )
 
         # Get the timestamp from Apple
-        digest = get_hash(signature, self.hash_type)
+        digest = get_hash(signature, self.HASH_TYPE)
         tst = CMSAttribute(
             {
                 "type": CMSAttributeType("signature_time_stamp_token"),
-                "values": [get_timestamp_token(digest, self.hash_type)],
+                "values": [get_timestamp_token(digest, self.HASH_TYPE)],
             }
         )
 
         # Make the CMS
         self.sig.sig_blob = SignatureBlob()
         self.sig.sig_blob.cms = make_cms(
-            self.cert, self.hash_type, signed_attrs, signature, CMSAttributes([tst])
+            self.cert, self.HASH_TYPE, signed_attrs, signature, CMSAttributes([tst])
         )
 
         # Get the CodeSignature section. It should be the last in the binary
@@ -527,10 +518,9 @@ class SingleCodeSigner(object):
         f.write((sig_cmd.datasize - f.tell()) * b"\x00")
 
         if self.detach_target:
-            target_dir = os.path.join(self.detach_target, "Contents", "MacOS")
-            os.makedirs(target_dir, exist_ok=True)
+            os.makedirs(self.detach_target, exist_ok=True)
             target_file = os.path.join(
-                target_dir,
+                self.detach_target,
                 os.path.basename(self.filename)
                 + f".{CPU_NAMES[self.macho.Mhdr.cputype]}sign",
             )
@@ -547,7 +537,70 @@ class SingleCodeSigner(object):
                 f.write(l + "\n")
 
 
-class CodeSignatureAttacher(SingleCodeSigner):
+class SingleBundleBinaryCodeSigner(SingleBinaryCodeSigner):
+    def __init__(
+        self,
+        filename: str,
+        macho_index: int,
+        macho: MACHO,
+        cert: Certificate,
+        privkey: PrivateKeyInfo,
+        reqs_path: Optional[str] = None,
+        ent_path: Optional[str] = None,
+        force: bool = False,
+        detach_target: Optional[str] = None,
+        hardened_runtime: bool = False,
+    ):
+        content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
+        info_file_path = os.path.join(content_dir, "Info.plist")
+        info_hash = hash_file(info_file_path, SingleBinaryCodeSigner.HASH_TYPE)
+        with open(info_file_path, "rb") as f:
+            info = plistlib.load(f, dict_type=OrderedDict)
+            ident = info["CFBundleIdentifier"]
+
+        reqs_hash = None
+        if reqs_path is not None:
+            reqs_blob = RequirementsBlob()
+            with open(reqs_path, "rb") as f:
+                reqs_blob.deserialize(f)
+
+            reqs_hash = reqs_blob.get_hash(SingleBinaryCodeSigner.HASH_TYPE)
+
+        ent_hash = None
+        if ent_path is not None:
+            ent_blob = EntitlementsBlob()
+            with open(ent_path, "rb") as f:
+                ent_blob.deserialize(f)
+            ent_hash = ent_blob.get_hash(SingleBinaryCodeSigner.HASH_TYPE)
+
+        res_dir_path = os.path.join(content_dir, "_CodeSignature", "CodeResources")
+        if detach_target:
+            res_dir_path = os.path.join(
+                detach_target, "Contents", "_CodeSignature", "CodeResources"
+            )
+        res_hash = hash_file(res_dir_path, SingleBinaryCodeSigner.HASH_TYPE)
+
+        if detach_target is not None:
+            detach_target = os.path.join(detach_target, "Contents", "MacOS")
+
+        super().__init__(
+            filename,
+            macho_index,
+            macho,
+            cert,
+            privkey,
+            info_hash,
+            reqs_hash,
+            ent_hash,
+            res_hash,
+            ident,
+            force,
+            detach_target,
+            hardened_runtime,
+        )
+
+
+class CodeSignatureAttacher(SingleBinaryCodeSigner):
     def __init__(
         self,
         filename: str,
@@ -595,6 +648,137 @@ class CodeSigner(object):
         hardened_runtime: bool = True,
     ):
         self.filename = filename
+        self.cert = cert
+        self.privkey = privkey
+        self.force = force
+        self.detach_target = detach_target
+        self.hardened_runtime = hardened_runtime
+
+        self.code_signers: List[SingleBinaryCodeSigner] = []
+
+        self.files_modified: List[str] = []
+
+        with open(self.filename, "rb") as f:
+            self.macho = MACHO(f.read(), parseSymbols=False)
+
+    def allocate(self):
+        for cs in self.code_signers:
+            # Get fresh calculations of offset and size
+            sig_offset = cs.calculate_sig_offset()
+            sig_size = cs.get_size_estimate()
+            sig_end = sig_offset + sig_size
+
+            # Get the linkedit segment
+            linkedit_seg = cs.get_linkedit_segment()
+            linkedit_end = linkedit_seg.fileoff + linkedit_seg.filesize
+
+            cmd = cs.get_sig_command()
+            if cmd is not None:
+                # Existing sig command. Get the CodeSignature section. It should be last one in the binary.
+                cs_sec = cs.macho.sect[-1]
+                sig_size = sig_size if sig_size > cmd.datasize else cmd.datasize
+            else:
+                # No existing sig command, so add one.
+                cmd = linkedit_data_command(cmd=LC_CODE_SIGNATURE, parent=cs.macho.load)
+
+                # Add the load command
+                cs.macho.load.append(cmd)
+
+                # Create a CodeSignature section
+                cs_sec = CodeSignature(parent=cmd)
+
+                # Add it to the binary
+                # Note, don't use linkedit_seg.addSH because linkedit doesn't actually have segments.
+                linkedit_seg.sect.append(cs_sec)
+                cs.macho.sect.add(cs_sec)
+
+            # Set the size, offset, and empty content of the CodeSignature section
+            cmd.dataoff = sig_offset
+            cmd.datasize = sig_size
+            cs_sec.size = sig_size
+            cs_sec.offset = sig_offset
+            cs_sec.content = StrPatchwork(sig_size * b"\x00")
+
+            # increase linkedit size
+            end_diff = sig_end - linkedit_end
+            if end_diff > 0:
+                linkedit_seg.filesize += end_diff
+                linkedit_seg.vmsize = round_up(linkedit_seg.filesize, cs.page_size)
+
+    def _setup_code_signers(self):
+        for i, h in enumerate(get_macho_list(self.macho)):
+            cs = SingleBinaryCodeSigner(
+                self.filename,
+                i,
+                h,
+                self.cert,
+                self.privkey,
+                force=self.force,
+                detach_target=self.detach_target,
+                hardened_runtime=self.hardened_runtime,
+            )
+            self.code_signers.append(cs)
+
+    def make_signature(self):
+        """
+        Signs the filename in place
+        """
+        self._setup_code_signers()
+
+        for cs in self.code_signers:
+            cs.make_code_directory()
+
+        self.apply_signature()
+
+    def apply_signature(self):
+        if len(self.code_signers) == 0:
+            raise Exception(f"No signatures to apply to {self.filename}")
+
+        # Allocate space in the binary for all of the signatures
+        self.allocate()
+
+        # Make the final signatures and add it to the binaries
+        for cs in self.code_signers:
+            cs.make_signature()
+
+        if not self.detach_target:
+            # Fix the fat header because offsets may have moved
+            if hasattr(self.macho, "Fhdr"):
+                for cs in self.code_signers:
+                    self.macho.fh[cs.macho_index].size = len(cs.macho.pack())
+                p = 0
+                for h, m in zip(self.macho.fh, self.macho.arch.macholist):
+                    if p > h.offset:
+                        h.offset = round_up(p, 2**h.align)
+                        m.offset = h.offset
+                    p = h.offset + h.size
+
+            # Write out the final macho
+            with open(self.filename, "wb") as f:
+                data = self.macho.pack()
+                f.write(data)
+                self.files_modified.append(self.filename)
+
+    def write_file_list(self, file_list: str):
+        with open(file_list, "a") as f:
+            for l in self.files_modified:
+                f.write(l + "\n")
+
+        for cs in self.code_signers:
+            cs.write_file_list(file_list)
+
+
+class BundleCodeSigner(CodeSigner):
+    def __init__(
+        self,
+        filename: str,
+        cert: Certificate,
+        privkey: PrivateKeyInfo,
+        force: bool = False,
+        detach_target: Optional[str] = None,
+        hardened_runtime: bool = True,
+    ):
+        self.filename = filename
         self.content_dir = os.path.dirname(os.path.dirname(os.path.abspath(filename)))
         self.cert = cert
         self.privkey = privkey
@@ -602,22 +786,12 @@ class CodeSigner(object):
         self.detach_target = detach_target
         self.hardened_runtime = hardened_runtime
 
-        self.hash_type = 2
-
-        self.code_signers: List[SingleCodeSigner] = []
+        self.code_signers: List[SingleBinaryCodeSigner] = []
 
         self.files_modified: List[str] = []
 
         with open(self.filename, "rb") as f:
             self.macho = MACHO(f.read(), parseSymbols=False)
-
-    def _hash_name(self) -> str:
-        """
-        Get the name of the hash for use in CodeResources
-        """
-        if self.hash_type == 1:  # SHA1 is just called "hash"
-            return "hash"
-        return f"hash{self.hash_type}"  # The rest is called "hashn" where n is the type value
 
     def _build_resources(self):
         resource_dir = os.path.join(self.content_dir, "Resources")
@@ -735,12 +909,14 @@ class CodeSigner(object):
                 rule = _find_rule(rel_path)
                 if rule is not None:
                     # Add the path
-                    file_hash = hash_file(file_path, self.hash_type)
+                    file_hash = hash_file(file_path, SingleBinaryCodeSigner.HASH_TYPE)
                     file_sha1 = hash_file(file_path, 1)  # Always have to hash with sha1
                     resources["files"][
                         rel_path
                     ] = file_sha1  # This is a legacy format that only supports SHA1
-                    resources["files2"][rel_path] = {self._hash_name(): file_hash}
+                    resources["files2"][rel_path] = {
+                        hash_code_res_name(SingleBinaryCodeSigner.HASH_TYPE): file_hash
+                    }
 
         # Make the final resources data
         resources["rules"] = rules["rules"]
@@ -757,59 +933,9 @@ class CodeSigner(object):
             plistlib.dump(resources, f, fmt=plistlib.FMT_XML)
             self.files_modified.append(cr_path)
 
-    def allocate(self):
-        for cs in self.code_signers:
-            # Get fresh calculations of offset and size
-            sig_offset = cs.calculate_sig_offset()
-            sig_size = cs.get_size_estimate()
-            sig_end = sig_offset + sig_size
-
-            # Get the linkedit segment
-            linkedit_seg = cs.get_linkedit_segment()
-            linkedit_end = linkedit_seg.fileoff + linkedit_seg.filesize
-
-            cmd = cs.get_sig_command()
-            if cmd is not None:
-                # Existing sig command. Get the CodeSignature section. It should be last one in the binary.
-                cs_sec = cs.macho.sect[-1]
-                sig_size = sig_size if sig_size > cmd.datasize else cmd.datasize
-            else:
-                # No existing sig command, so add one.
-                cmd = linkedit_data_command(cmd=LC_CODE_SIGNATURE, parent=cs.macho.load)
-
-                # Add the load command
-                cs.macho.load.append(cmd)
-
-                # Create a CodeSignature section
-                cs_sec = CodeSignature(parent=cmd)
-
-                # Add it to the binary
-                # Note, don't use linkedit_seg.addSH because linkedit doesn't actually have segments.
-                linkedit_seg.sect.append(cs_sec)
-                cs.macho.sect.add(cs_sec)
-
-            # Set the size, offset, and empty content of the CodeSignature section
-            cmd.dataoff = sig_offset
-            cmd.datasize = sig_size
-            cs_sec.size = sig_size
-            cs_sec.offset = sig_offset
-            cs_sec.content = StrPatchwork(sig_size * b"\x00")
-
-            # increase linkedit size
-            end_diff = sig_end - linkedit_end
-            if end_diff > 0:
-                linkedit_seg.filesize += end_diff
-                linkedit_seg.vmsize = round_up(linkedit_seg.filesize, cs.page_size)
-
-    def make_signature(self):
-        """
-        Signs the filename in place
-        """
-        # Open the MachO and prepare the code signer for each embedded binary
-        # Get all of the size estimates
-        arch_sizes: Dict[int, int] = {}  # cputype: sig size
+    def _setup_code_signers(self):
         for i, h in enumerate(get_macho_list(self.macho)):
-            cs = SingleCodeSigner(
+            cs = SingleBundleBinaryCodeSigner(
                 self.filename,
                 i,
                 h,
@@ -821,13 +947,12 @@ class CodeSigner(object):
             )
             self.code_signers.append(cs)
 
+    def make_signature(self):
         # Make CodeResources
         self._build_resources()
 
-        for cs in self.code_signers:
-            cs.make_code_directory()
-
-        self.apply_signature()
+        # Sign
+        super().make_signature()
 
     def apply_signature(self):
         if len(self.code_signers) == 0:
@@ -879,34 +1004,44 @@ def check_cert_validity(cert: Certificate):
         )
 
 
-def sign_mach_o(
-    filename: str,
-    p12_path: str,
-    passphrase: Optional[str] = None,
+def sign_app_bundle(
+    bundle: str,
+    filepath: str,
+    cert: Certificate,
+    privkey: PrivateKeyInfo,
     force: bool = False,
     file_list: Optional[str] = None,
     detach_target: Optional[str] = None,
-    hardened_runtime: bool = False,
+    hardened_runtime: bool = True,
 ):
-    """
-    Code sign a Mach-O binary in place
-    """
-    bundle, filepath = get_bundle_exec(filename)
-
-    if passphrase is None:
-        passphrase = getpass.getpass(f"Enter the passphrase for {p12_path}: ")
-    pass_bytes = passphrase.encode()
-
-    # Load cert and privkey
-    with open(p12_path, "rb") as f:
-        privkey, cert, _ = parse_pkcs12(f.read(), pass_bytes)
-
-    check_cert_validity(cert)
-
     # Include the bundle name in the detached target
     if detach_target:
         detach_target = os.path.join(detach_target, os.path.basename(bundle))
 
+    # Sign
+    cs = BundleCodeSigner(
+        filepath,
+        cert,
+        privkey,
+        force=force,
+        detach_target=detach_target,
+        hardened_runtime=hardened_runtime,
+    )
+    cs.make_signature()
+
+    if file_list is not None:
+        cs.write_file_list(file_list)
+
+
+def sign_single_binary(
+    filepath: str,
+    cert: Certificate,
+    privkey: PrivateKeyInfo,
+    force: bool = False,
+    file_list: Optional[str] = None,
+    detach_target: Optional[str] = None,
+    hardened_runtime: bool = True,
+):
     # Sign
     cs = CodeSigner(
         filepath,
@@ -922,69 +1057,125 @@ def sign_mach_o(
         cs.write_file_list(file_list)
 
 
-def apply_sig(filename: str, detach_path: str) -> SigningStatus:
+def sign_macos_app(
+    filename: str,
+    p12_path: str,
+    passphrase: Optional[str] = None,
+    force: bool = False,
+    file_list: Optional[str] = None,
+    detach_target: Optional[str] = None,
+    hardened_runtime: bool = False,
+):
     """
-    Attach the signature for the bundle of the same name at the detach_path
+    Code sign a MacOS App bundle or Mach-O binary in place
     """
     bundle, filepath = get_bundle_exec(filename)
-    detach_bundle = os.path.join(detach_path, os.path.basename(bundle))
 
+    if passphrase is None:
+        passphrase = getpass.getpass(f"Enter the passphrase for {p12_path}: ")
+    pass_bytes = passphrase.encode()
+
+    # Load cert and privkey
+    with open(p12_path, "rb") as f:
+        privkey, cert, _ = parse_pkcs12(f.read(), pass_bytes)
+
+    check_cert_validity(cert)
+
+    if bundle is not None:
+        sign_app_bundle(
+            bundle,
+            filepath,
+            cert,
+            privkey,
+            force,
+            file_list,
+            detach_target,
+            hardened_runtime,
+        )
+    else:
+        sign_single_binary(
+            filepath, cert, privkey, force, file_list, detach_target, hardened_runtime
+        )
+
+
+def apply_sig(bins_path: str, sigs_path: str) -> SigningStatus:
+    """
+    Attach the signature for a bundle or individual binary of the same name at the detach_path
+    """
     bin_code_signers: Dict[str, CodeSigner] = {}
-
-    for file_path in glob.iglob(os.path.join(detach_bundle, "**"), recursive=True):
-        if os.path.isdir(file_path):
+    sig_files = []
+    if os.path.isfile(sigs_path):
+        sig_files.append(sigs_path)
+    else:
+        sig_files.extend(glob.glob(os.path.join(sigs_path, "**"), recursive=True))
+    for sig_file_path in sig_files:
+        print(sig_file_path)
+        if os.path.isdir(sig_file_path):
             continue
-        bundle_relpath = os.path.relpath(file_path, detach_bundle)
-        bundle_path = os.path.join(bundle, bundle_relpath)
+        # All detached sigs are named <binary>.<arch>sign
+        # Apply these detached sigs to the binary of the same name and relative path if it is the correct arch
+        if sig_file_path.endswith("sign"):
+            if not os.path.isfile(bins_path):
+                # Compute the path to the binary
+                # Get the relative path from sigs_path to the sig
+                bin_sig_relpath = os.path.relpath(sig_file_path, sigs_path)
+                # Remove the extension
+                bin_relpath, ext = os.path.splitext(bin_sig_relpath)
+                # Build final path from bins_path
+                bin_path = os.path.join(bins_path, bin_relpath)
+            else:
+                bin_relpath, ext = os.path.splitext(sigs_path)
+                bin_path = bins_path
 
-        if os.path.basename(os.path.dirname(file_path)) == "MacOS":
-            # Signature files are only in the MacOS dir
-            if file_path.endswith("sign"):
-                bin_name, ext = os.path.splitext(file_path)
-
-                bundle_relpath = os.path.relpath(bin_name, detach_bundle)
-                bundle_path = os.path.join(bundle, bundle_relpath)
-
-                if bin_name not in bin_code_signers:
-                    bin_code_signers[bin_name] = CodeSigner(
-                        bundle_path, Certificate(), PrivateKeyInfo()
+            # Check for bundle
+            print(bin_path)
+            bundle, _ = get_bundle_exec(bin_path)
+            if bin_path not in bin_code_signers:
+                # Make CodeSigner objects for "signing" with detached sigs
+                if bundle:
+                    bin_code_signers[bin_path] = BundleCodeSigner(
+                        bin_path, Certificate(), PrivateKeyInfo()
                     )
-                bcs = bin_code_signers[bin_name]
-
-                # Figure out which index this sig is for
-                idx = 0
-                macho = bcs.macho
-                if hasattr(bcs.macho, "Fhdr"):
-                    if ext == ".sign":
-                        raise Exception(
-                            "Cannot attach single architecture signature to universal binary"
-                        )
-                    arch_type = CPU_NAME_TO_TYPE[ext[1:-4]]
-                    for i, h in enumerate(bcs.macho.fh):
-                        if h.cputype == arch_type:
-                            idx = i
-                            macho = bcs.macho.arch[i]
-                            break
                 else:
-                    # For thin binaries, choose the signature that matches the arch
-                    # if the arch is specified
-                    assert hasattr(macho, "Mhdr")
-                    if ext != ".sign":
-                        arch_type = CPU_NAME_TO_TYPE[ext[1:-4]]
-                        if macho.Mhdr.cputype != arch_type:
-                            continue
+                    bin_code_signers[bin_path] = CodeSigner(
+                        bin_path, Certificate(), PrivateKeyInfo()
+                    )
+            bcs = bin_code_signers[bin_path]
 
-                # Create a CodeSignatureAttacher
-                csa = CodeSignatureAttacher(bundle_path, idx, macho, file_path)
+            # Figure out which index this sig is for
+            idx = 0
+            macho = bcs.macho
+            if hasattr(bcs.macho, "Fhdr"):
+                if ext == ".sign":
+                    raise Exception(
+                        "Cannot attach single architecture signature to universal binary"
+                    )
+                arch_type = CPU_NAME_TO_TYPE[ext[1:-4]]
+                for i, h in enumerate(bcs.macho.fh):
+                    if h.cputype == arch_type:
+                        idx = i
+                        macho = bcs.macho.arch[i]
+                        break
+            else:
+                # For thin binaries, choose the signature that matches the arch
+                # if the arch is specified
+                assert hasattr(macho, "Mhdr")
+                if ext != ".sign":
+                    arch_type = CPU_NAME_TO_TYPE[ext[1:-4]]
+                    if macho.Mhdr.cputype != arch_type:
+                        continue
 
-                # Add it to the CodeSigner
-                bcs.code_signers.append(csa)
+            # Create a CodeSignatureAttacher
+            csa = CodeSignatureAttacher(bin_path, idx, macho, sig_file_path)
 
-                continue
-
-        # Non-signature files are just copied over
-        os.makedirs(os.path.dirname(bundle_path), exist_ok=True)
-        shutil.copyfile(file_path, bundle_path)
+            # Add it to the CodeSigner
+            bcs.code_signers.append(csa)
+        else:
+            # Non-signature files are just copied over
+            file_sigs_relpath = os.path.relpath(sig_file_path, sigs_path)
+            file_out_path = os.path.join(bins_path, file_sigs_relpath)
+            os.makedirs(os.path.dirname(file_out_path), exist_ok=True)
+            shutil.copyfile(sig_file_path, file_out_path)
 
     # Apply the signature for all CodeSigners
     ret = None
