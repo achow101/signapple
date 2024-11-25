@@ -1,5 +1,6 @@
 import glob
 import hashlib
+import plistlib
 import os
 
 from elfesteem.macho import MACHO
@@ -63,8 +64,9 @@ def round_up(n: int, i: int) -> int:
 
 def get_bundle_exec(filepath: str) -> Tuple[Optional[str], str]:
     """
-    Get the path to the bundle dir (contains the Contents dir) and the executable itself.
-    filepath may be the path to the exec, or to the bundle dir.
+    Get the path to the bundle dir (contains the Contents dir) and the (main) executable itself.
+    filepath may be the path to an exec, or to the bundle dir. If to the bundle dir, the main
+    executable as specified in the Info.plist is returned.
     """
     filepath = os.path.abspath(filepath)
     if os.path.isfile(filepath):
@@ -99,16 +101,19 @@ def get_bundle_exec(filepath: str) -> Tuple[Optional[str], str]:
                 "Path is not a correctly formatted Bundle. Missing MacOS dir"
             )
 
+        info_file_path = os.path.join(content_dir, "Info.plist")
+        with open(info_file_path, "rb") as f:
+            info = plistlib.load(f)
+            main_exec_name = info["CFBundleExecutable"]
+
         # List all file in this directory
         files = glob.glob(os.path.join(macos_dir, "*"))
         if len(files) == 0:
             raise Exception("No binary to sign")
-        elif len(files) == 1:
-            return filepath, files[0]
-        else:
-            raise Exception(
-                "Multiple binaries found, unsure which to use. Please specify the path to a single binary instead"
-            )
+        for filename in files:
+            if os.path.basename(filename) == main_exec_name:
+                return filepath, filename
+        raise Exception("Bundle does not contain main exectuable")
     else:
         raise Exception("Path is not a bundle directory or a file")
 
