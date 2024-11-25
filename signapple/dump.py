@@ -22,7 +22,7 @@ def _dump_signature(s: BytesIO):
     print(sig_superblob)
 
 
-def _get_code_sig(b: MACHO):
+def get_code_sig(b: MACHO):
     # Get the offset of the signature from the header
     # It is under the LC_CODE_SIGNATURE command
     sigmeta = [cmd for cmd in b.load.lhlist if cmd.cmd == LC_CODE_SIGNATURE]
@@ -38,7 +38,7 @@ def _get_code_sig(b: MACHO):
 
 
 def _dump_single(filename: str, b: MACHO):
-    v = _get_code_sig(b)
+    v = get_code_sig(b)
     _dump_signature(v)
 
 
@@ -77,7 +77,7 @@ def get_binary_info(filename):
     for header in get_macho_list(macho):
         print(f"{_get_cpu_type_string(header.Mhdr.cputype)} Executable")
         try:
-            v = _get_code_sig(header)
+            v = get_code_sig(header)
             print("Has code signature")
         except Exception as e:
             print(str(e))
