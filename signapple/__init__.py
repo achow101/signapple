@@ -2,8 +2,9 @@ import argparse
 
 
 from .dump import dump_mach_o_signature, dump_sigfile, get_binary_info
-from .verify import verify_mach_o_signature
+from .notarize import notarize_bundle
 from .sign import apply_sig, sign_macos_app, SigningStatus
+from .verify import verify_mach_o_signature
 
 
 def verify(args):
@@ -45,6 +46,10 @@ def apply(args):
         print("Some code signatures applied")
     else:
         assert False
+
+
+def notarize(args):
+    notarize_bundle(args.bundle, args.apikeyfile, args.issuer_id)
 
 
 def bininfo(args):
@@ -140,6 +145,29 @@ def main():
         "filename", help="The binary (or bundle) to get information about"
     )
     info_subparser.set_defaults(func=bininfo)
+
+    notarize_subparser = subparsers.add_parser(
+        "notarize", help="Notarize a signed app bundle and staple the notarization"
+    )
+    notarize_subparser.add_argument(
+        "apikeyfile",
+        help="Path to the API private key file downloaded from App Store Connect",
+    )
+    notarize_subparser.add_argument(
+        "issuer_id",
+        help="App Store Connect Issuer ID",
+    )
+    notarize_subparser.add_argument(
+        "bundle",
+        help="Path to the signed app bundle to notarize. It will be modified in place",
+    )
+    notarize_subparser.add_argument(
+        "--file-list", help="Path to write out the list of modified files to"
+    )
+    notarize_subparser.add_argument(
+        "--detach", help="Detach the notarization and write it to this path"
+    )
+    notarize_subparser.set_defaults(func=notarize)
 
     args = parser.parse_args()
     args.func(args)
