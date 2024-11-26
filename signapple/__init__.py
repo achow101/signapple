@@ -50,7 +50,7 @@ def apply(args):
 
 def notarize(args):
     notarize_bundle(
-        args.bundle, args.apikeyfile, args.issuer_id, args.file_list, args.detach
+        args.bundle, args.apikeyfile, args.issuer_id, args.file_list, args.detach, args.staple_only
     )
 
 
@@ -168,6 +168,10 @@ def main():
     )
     notarize_subparser.add_argument(
         "--detach", help="Detach the notarization and write it to this path"
+    )
+    notarize_subparser.add_argument(
+        "--staple-only", help="Only look up and staple the notarization if it exists",
+        action="store_true",
     )
     notarize_subparser.set_defaults(func=notarize)
 
