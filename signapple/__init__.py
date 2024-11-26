@@ -136,7 +136,7 @@ def main():
     )
     apply_subparser.add_argument(
         "sig",
-        help="The directory containing the detached signature. The same path that was given to --detach during signing",
+        help="The detached signature. Either a bundle's detached signature directory or the signature file itself",
     )
     apply_subparser.set_defaults(func=apply)
 
