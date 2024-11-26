@@ -72,7 +72,7 @@ def notarize_bundle(bundle_path: str, api_privkey_file: str, issuer_id: str):
         ],
     }
     api_token = jwt.encode(jwt_payload, api_privkey, "ES256", jwt_header)
-    #print(api_token)
+    # print(api_token)
 
     # Hash the file with SHA256
     bundle_hash = hash_file(zipped_bundle, 2).hex()
@@ -105,10 +105,10 @@ def notarize_bundle(bundle_path: str, api_privkey_file: str, issuer_id: str):
 
     # Upload with boto
     s3 = boto3.client(
-         "s3",
-         aws_access_key_id=aws_info["awsAccessKeyId"],
-         aws_secret_access_key=aws_info["awsSecretAccessKey"],
-         aws_session_token=aws_info["awsSessionToken"],
+        "s3",
+        aws_access_key_id=aws_info["awsAccessKeyId"],
+        aws_secret_access_key=aws_info["awsSecretAccessKey"],
+        aws_session_token=aws_info["awsSessionToken"],
     )
 
     print("Uploading...")
