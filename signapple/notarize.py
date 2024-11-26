@@ -27,12 +27,8 @@ NOTARY_SERVICE = "https://appstoreconnect.apple.com/notary/v2/submissions"
 TICKET_LOOKUP = "https://api.apple-cloudkit.com/database/1/com.apple.gk.ticket-delivery/production/public/records/lookup"
 
 
-def notarize_bundle(
-    bundle_path: str,
-    api_privkey_file: str,
-    issuer_id: str,
-    file_list: Optional[str] = None,
-    detach_target: Optional[str] = None,
+def _get_app_store_connect_token(
+    api_privkey_file: str, issuer_id: str, current_time: datetime.datetime
 ):
     # Assume the file is named <foo>_AuthKey_<keyid>.p8 and retrieve the keyid
     privkey_name, ext = os.path.splitext(api_privkey_file)
@@ -44,23 +40,7 @@ def notarize_bundle(
     with open(api_privkey_file, "r") as f:
         api_privkey = f.read().strip()
 
-    # Verify bundle path
-    bundle, binpath = get_bundle_exec(bundle_path)
-    assert bundle is not None
-
-    # ZIP the bundle
-    zipped_bundle = shutil.make_archive(
-        bundle,
-        "zip",
-        root_dir=os.path.dirname(bundle),
-        base_dir=os.path.basename(bundle),
-    )
-
-    # Get time
-    current_time = datetime.datetime.now()
     unix_timestamp = int(current_time.timestamp())
-    iso_timestamp = current_time.strftime("%Y%m%dT%H%M%SZ")
-    iso_date = current_time.strftime("%Y%m%d")
 
     # Make JSON Web Token
     jwt_header = {
@@ -78,20 +58,17 @@ def notarize_bundle(
             "POST /notary/v2/submissions",
         ],
     }
-    api_token = jwt.encode(jwt_payload, api_privkey, "ES256", jwt_header)
-    # print(api_token)
+    return jwt.encode(jwt_payload, api_privkey, "ES256", jwt_header)
 
-    # Hash the file with SHA256
-    bundle_hash = hash_file(zipped_bundle, 2).hex()
 
-    # Begin notarization process
+def _begin_notarization(api_token, filename: str, file_hash: str):
     notary_headers = {
         "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json",
     }
     notary_data = {
-        "submissionName": os.path.basename(zipped_bundle),
-        "sha256": bundle_hash,
+        "submissionName": filename,
+        "sha256": file_hash,
     }
     resp = urlopen(
         Request(
@@ -102,29 +79,39 @@ def notarize_bundle(
         )
     )
     notary_resp = json.loads(resp.read())
+    return notary_resp["data"]["id"], notary_resp["data"]["attributes"]
 
-    aws_info = notary_resp["data"]["attributes"]
-    bucket = aws_info["bucket"]
-    obj = aws_info["object"]
-    id = notary_resp["data"]["id"]
 
-    print(f"Notarization ID: {id}")
-
+def _s3_upload(
+    filename: str,
+    aws_bucket: str,
+    aws_obj: str,
+    aws_access_key_id: str,
+    aws_secret_access_key: str,
+    aws_session_token: str,
+):
     # Upload with boto
     s3 = boto3.client(
         "s3",
-        aws_access_key_id=aws_info["awsAccessKeyId"],
-        aws_secret_access_key=aws_info["awsSecretAccessKey"],
-        aws_session_token=aws_info["awsSessionToken"],
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        aws_session_token=aws_session_token,
     )
+    resp = s3.upload_file(filename, aws_bucket, aws_obj)
 
-    print("Uploading...")
-    resp = s3.upload_file(zipped_bundle, bucket, obj)
 
-    # Poll submission status, wait for "Accepted"
+def _wait_submission_status(api_token: str, notarization_id: str):
+    # Poll submission status, wait for no longer "In Progress"
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json",
+    }
     while True:
-        headers = {"Authorization": f"Bearer {api_token}"}
-        r = urlopen(Request(f"{NOTARY_SERVICE}/{id}", headers=headers, method="GET"))
+        r = urlopen(
+            Request(
+                f"{NOTARY_SERVICE}/{notarization_id}", headers=headers, method="GET"
+            )
+        )
         resp = json.loads(r.read())
         if resp["data"]["attributes"]["status"] != "In Progress":
             break
@@ -138,8 +125,8 @@ def notarize_bundle(
         # Get the log for more info
         resp = urlopen(
             Request(
-                f"{NOTARY_SERVICE}/{id}/logs",
-                headers=notary_headers,
+                f"{NOTARY_SERVICE}/{notarization_id}/logs",
+                headers=headers,
                 method="GET",
             )
         )
@@ -150,6 +137,13 @@ def notarize_bundle(
 
         raise Exception("Notarization failed")
 
+
+def _staple_notarization(
+    bundle: str,
+    binpath: str,
+    file_list: Optional[str] = None,
+    detach_target: Optional[str] = None,
+):
     # Get code directory hash from the main executable in the bundle
     with open(binpath, "rb") as f:
         macho = MACHO(f.read(), parseSymbols=False)
@@ -202,3 +196,75 @@ def notarize_bundle(
             f.write(staple_path + "\n")
 
     print("Notarization stapled to bundle")
+
+
+def _submit_bundle_for_notarization(
+    bundle: str,
+    binpath: str,
+    api_privkey_file: str,
+    issuer_id: str,
+    file_list: Optional[str] = None,
+    detach_target: Optional[str] = None,
+):
+    # ZIP the bundle
+    zipped_bundle = shutil.make_archive(
+        bundle,
+        "zip",
+        root_dir=os.path.dirname(bundle),
+        base_dir=os.path.basename(bundle),
+    )
+
+    # Get time
+    current_time = datetime.datetime.now()
+    iso_timestamp = current_time.strftime("%Y%m%dT%H%M%SZ")
+    iso_date = current_time.strftime("%Y%m%d")
+
+    # Get App Store Connect API Token
+    api_token = _get_app_store_connect_token(api_privkey_file, issuer_id, current_time)
+    # print(api_token)
+
+    # Hash the file with SHA256
+    bundle_hash = hash_file(zipped_bundle, 2).hex()
+
+    # Begin notarization process
+    id, aws_info = _begin_notarization(
+        api_token, os.path.basename(zipped_bundle), bundle_hash
+    )
+    bucket = aws_info["bucket"]
+    obj = aws_info["object"]
+
+    print(f"Notarization ID: {id}")
+
+    # Upload to S3 bucket
+    print("Uploading...")
+    _s3_upload(
+        zipped_bundle,
+        bucket,
+        obj,
+        aws_info["awsAccessKeyId"],
+        aws_info["awsSecretAccessKey"],
+        aws_info["awsSessionToken"],
+    )
+
+    # Wait for notarization to be accepted
+    _wait_submission_status(api_token, id)
+
+
+def notarize_bundle(
+    bundle_path: str,
+    api_privkey_file: str,
+    issuer_id: str,
+    file_list: Optional[str] = None,
+    detach_target: Optional[str] = None,
+    staple_only: bool = False,
+):
+    # Verify bundle path
+    bundle, binpath = get_bundle_exec(bundle_path)
+    assert bundle is not None
+
+    if not staple_only:
+        _submit_bundle_for_notarization(
+            bundle, binpath, api_privkey_file, issuer_id, file_list, detach_target
+        )
+
+    _staple_notarization(bundle, binpath, file_list, detach_target)
