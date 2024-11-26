@@ -26,7 +26,13 @@ NOTARY_SERVICE = "https://appstoreconnect.apple.com/notary/v2/submissions"
 TICKET_LOOKUP = "https://api.apple-cloudkit.com/database/1/com.apple.gk.ticket-delivery/production/public/records/lookup"
 
 
-def notarize_bundle(bundle_path: str, api_privkey_file: str, issuer_id: str):
+def notarize_bundle(
+    bundle_path: str,
+    api_privkey_file: str,
+    issuer_id: str,
+    file_list: Optional[str] = None,
+    detach_target: Optional[str] = None,
+):
     # Assume the file is named <foo>_AuthKey_<keyid>.p8 and retrieve the keyid
     privkey_name, ext = os.path.splitext(api_privkey_file)
     if ext != ".p8" or "AuthKey_" not in api_privkey_file:
@@ -165,5 +171,8 @@ def notarize_bundle(bundle_path: str, api_privkey_file: str, issuer_id: str):
     staple_path = os.path.join(bundle, "Contents", "CodeResources")
     with open(staple_path, "wb") as f:
         f.write(ticket_data)
+    if file_list is not None:
+        with open(file_list, "a") as f:
+            f.write(staple_path + "\n")
 
     print("Notarization stapled to bundle")
