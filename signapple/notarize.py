@@ -13,6 +13,7 @@ import time
 from elfesteem.macho import MACHO
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, quote
+from typing import Optional
 
 from .blobs import EmbeddedSignatureBlob
 from .dump import get_code_sig
@@ -168,7 +169,13 @@ def notarize_bundle(
     ticket_data = base64.b64decode(ticket_b64)
 
     # Stapling is just outputting the ticket data to Contents/CodeResources
-    staple_path = os.path.join(bundle, "Contents", "CodeResources")
+    if detach_target is not None:
+        staple_path = os.path.join(
+            detach_target, os.path.basename(bundle), "Contents", "CodeResources"
+        )
+    else:
+        staple_path = os.path.join(bundle, "Contents", "CodeResources")
+    os.makedirs(os.path.dirname(staple_path), exist_ok=True)
     with open(staple_path, "wb") as f:
         f.write(ticket_data)
     if file_list is not None:

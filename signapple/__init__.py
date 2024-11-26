@@ -50,7 +50,7 @@ def apply(args):
 
 def notarize(args):
     notarize_bundle(
-        args.bundle, args.apikeyfile, args.issuer_id, args.file_list, args.detach_target
+        args.bundle, args.apikeyfile, args.issuer_id, args.file_list, args.detach
     )
 
 
