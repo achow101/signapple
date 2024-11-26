@@ -1109,7 +1109,6 @@ def apply_sig(bins_path: str, sigs_path: str) -> SigningStatus:
     else:
         sig_files.extend(glob.glob(os.path.join(sigs_path, "**"), recursive=True))
     for sig_file_path in sig_files:
-        print(sig_file_path)
         if os.path.isdir(sig_file_path):
             continue
         # All detached sigs are named <binary>.<arch>sign
@@ -1128,7 +1127,6 @@ def apply_sig(bins_path: str, sigs_path: str) -> SigningStatus:
                 bin_path = bins_path
 
             # Check for bundle
-            print(bin_path)
             bundle, _ = get_bundle_exec(bin_path)
             if bin_path not in bin_code_signers:
                 # Make CodeSigner objects for "signing" with detached sigs
