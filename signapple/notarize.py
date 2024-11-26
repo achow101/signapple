@@ -126,10 +126,29 @@ def notarize_bundle(
         headers = {"Authorization": f"Bearer {api_token}"}
         r = urlopen(Request(f"{NOTARY_SERVICE}/{id}", headers=headers, method="GET"))
         resp = json.loads(r.read())
-        if resp["data"]["attributes"]["status"] == "Accepted":
+        if resp["data"]["attributes"]["status"] != "In Progress":
             break
         time.sleep(5)
         print("Polling notarization status")
+
+    # Error if invalid or rejected
+    if resp["data"]["attributes"]["status"] in ["Invalid", "Rejected"]:
+        print(f"Notarization was {resp['data']['attributes']['status']}")
+
+        # Get the log for more info
+        resp = urlopen(
+            Request(
+                f"{NOTARY_SERVICE}/{id}/logs",
+                headers=notary_headers,
+                method="GET",
+            )
+        )
+        notary_resp = json.loads(resp.read())
+        logs_url = notary_resp["data"]["attributes"]["developerLogUrl"]
+        resp = urlopen(Request(logs_url, method="GET"))
+        print(resp.read().decode())
+
+        raise Exception("Notarization failed")
 
     # Get code directory hash from the main executable in the bundle
     with open(binpath, "rb") as f:
