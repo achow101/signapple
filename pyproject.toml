@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "signapple"
-version = "0.1.0"
+version = "0.2.0"
 description = "Signing and verification tool for MacOS code signatures"
 authors = ["Andrew Chow <achow101-github@achow101.com>"]
 license = "MIT License"
