@@ -178,6 +178,8 @@ def _staple_notarization(
     ticket_resp = json.loads(resp.read())
     ticket_info = ticket_resp["records"][0]
     assert ticket_info["recordName"] == ticket_record_name
+    if "serverErrorCode" in ticket_info:
+        raise Exception(f"Unable to staple ticket. Error: {ticket_info}")
     ticket_b64 = ticket_info["fields"]["signedTicket"]["value"]
     ticket_data = base64.b64decode(ticket_b64)
 
