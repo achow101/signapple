@@ -12,7 +12,6 @@ oscrypto = { git = "https://github.com/wbond/oscrypto.git", rev = "1547f535001ba
 certvalidator = { git = "https://github.com/achow101/certvalidator.git", rev = "e5bdb4bfcaa09fa0af355eb8867d00dfeecba08c" }
 elf-esteem = { git = "https://github.com/LRGH/elfesteem.git", rev = "5800fcf150dec3ce524f14bc2f24dc037f4826e6" }
 pyjwt = {version = "^2.10.0", extras = ["crypto"]}
-boto3 = "^1.35.69"
 
 [tool.poetry.dev-dependencies]
 black = "^23.10"

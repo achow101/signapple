@@ -1,4 +1,3 @@
-import boto3
 import base64
 import datetime
 import hashlib
@@ -11,6 +10,7 @@ import shutil
 import time
 
 from elfesteem.macho import MACHO
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, quote
 from typing import Optional
@@ -89,15 +89,71 @@ def _s3_upload(
     aws_access_key_id: str,
     aws_secret_access_key: str,
     aws_session_token: str,
+    file_hash: str,
+    current_time: datetime.datetime,
 ):
-    # Upload with boto
-    s3 = boto3.client(
-        "s3",
-        aws_access_key_id=aws_access_key_id,
-        aws_secret_access_key=aws_secret_access_key,
-        aws_session_token=aws_session_token,
-    )
-    resp = s3.upload_file(filename, aws_bucket, aws_obj)
+    iso_timestamp = current_time.strftime("%Y%m%dT%H%M%SZ")
+    iso_date = current_time.strftime("%Y%m%d")
+
+    # Build AWS signature. See https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+    host = f"{aws_bucket}.s3-accelerate.amazonaws.com"
+    http_method = "PUT"
+    uri = f"/{aws_obj}"
+    hashed_payload = file_hash
+    aws_headers = {
+        "Host": host,
+        "x-amz-content-sha256": hashed_payload,
+        "x-amz-security-token": aws_session_token,
+        "x-amz-date": iso_timestamp,
+    }
+    query_string = ""
+    region = "us-west-2"
+    scope = f"{iso_date}/{region}/s3/aws4_request"
+
+    canon_headers = ""
+    signed_headers = ""
+    for key in sorted(aws_headers.keys()):
+        value = aws_headers[key]
+        canon_headers += key.lower() + ":" + value.strip() + "\n"
+        signed_headers += key.lower() + ";"
+    signed_headers = signed_headers[:-1]
+
+    aws_canonical_req = f"{http_method}\n{quote(uri)}\n{quote(query_string)}\n{canon_headers}\n{signed_headers}\n{hashed_payload}"
+    aws_str_to_sign = f"AWS4-HMAC-SHA256\n{iso_timestamp}\n{scope}\n{hashlib.sha256(aws_canonical_req.encode()).hexdigest()}"
+    aws_date_key = hmac.new(
+        key=f"AWS4{aws_secret_access_key}".encode(),
+        msg=iso_date.encode(),
+        digestmod=hashlib.sha256,
+    ).digest()
+    aws_date_region_key = hmac.new(
+        key=aws_date_key, msg=region.encode(), digestmod=hashlib.sha256
+    ).digest()
+    aws_date_region_service_key = hmac.new(
+        key=aws_date_region_key, msg=b"s3", digestmod=hashlib.sha256
+    ).digest()
+    aws_signing_key = hmac.new(
+        key=aws_date_region_service_key, msg=b"aws4_request", digestmod=hashlib.sha256
+    ).digest()
+    aws_sig = hmac.new(
+        key=aws_signing_key, msg=aws_str_to_sign.encode(), digestmod=hashlib.sha256
+    ).hexdigest()
+
+    # Upload file to AWS S3
+    aws_cred = f"{aws_access_key_id}/{scope}"
+    aws_headers[
+        "Authorization"
+    ] = f"AWS4-HMAC-SHA256 Credential={aws_cred},SignedHeaders={signed_headers},Signature={aws_sig}"
+
+    with open(filename, "rb") as f:
+        # Upload the file to S3 bucket specified in resp
+        url = f"https://{host}{uri}"
+        try:
+            s3_resp = urlopen(
+                Request(url, data=f.read(), headers=aws_headers, method="PUT")
+            )
+        except HTTPError as e:
+            print(e.fp.read().decode())
+            raise(e)
 
 
 def _wait_submission_status(api_token: str, notarization_id: str):
@@ -217,9 +273,7 @@ def _submit_bundle_for_notarization(
     )
 
     # Get time
-    current_time = datetime.datetime.now()
-    iso_timestamp = current_time.strftime("%Y%m%dT%H%M%SZ")
-    iso_date = current_time.strftime("%Y%m%d")
+    current_time = datetime.datetime.now().astimezone(datetime.UTC)
 
     # Get App Store Connect API Token
     api_token = _get_app_store_connect_token(api_privkey_file, issuer_id, current_time)
@@ -246,6 +300,8 @@ def _submit_bundle_for_notarization(
         aws_info["awsAccessKeyId"],
         aws_info["awsSecretAccessKey"],
         aws_info["awsSessionToken"],
+        bundle_hash,
+        current_time,
     )
 
     # Wait for notarization to be accepted
