@@ -1,15 +1,18 @@
 import base64
 import datetime
+import getpass
 import hashlib
 import hmac
 import json
-import jwt
 import os
 import plistlib
 import shutil
 import time
 
 from elfesteem.macho import MACHO
+from asn1crypto.algos import DSASignature
+from oscrypto.asymmetric import load_private_key, ecdsa_sign
+from oscrypto.keys import parse_private
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, quote
@@ -28,7 +31,10 @@ TICKET_LOOKUP = "https://api.apple-cloudkit.com/database/1/com.apple.gk.ticket-d
 
 
 def _get_app_store_connect_token(
-    api_privkey_file: str, issuer_id: str, current_time: datetime.datetime
+    api_privkey_file: str,
+    issuer_id: str,
+    current_time: datetime.datetime,
+    passphrase: Optional[str] = None,
 ):
     # Assume the file is named <foo>_AuthKey_<keyid>.p8 and retrieve the keyid
     privkey_name, ext = os.path.splitext(api_privkey_file)
@@ -36,9 +42,13 @@ def _get_app_store_connect_token(
         raise Exception("App Store Connect API Private key file not named as expected.")
     key_id = privkey_name.split("_")[-1]
 
+    if passphrase is None:
+        passphrase = getpass.getpass(f"Enter the passphrase for {api_privkey_file}:")
+    pass_bytes = passphrase.encode()
+
     # Get the privkey
-    with open(api_privkey_file, "r") as f:
-        api_privkey = f.read().strip()
+    with open(api_privkey_file, "rb") as f:
+        privkey = load_private_key(parse_private(f.read(), pass_bytes))
 
     unix_timestamp = int(current_time.timestamp())
 
@@ -58,7 +68,21 @@ def _get_app_store_connect_token(
             "POST /notary/v2/submissions",
         ],
     }
-    return jwt.encode(jwt_payload, api_privkey, "ES256", jwt_header)
+    jwt_header_b64 = base64.urlsafe_b64encode(json.dumps(jwt_header).encode()).strip(
+        b"="
+    )
+    jwt_payload_b64 = base64.urlsafe_b64encode(json.dumps(jwt_payload).encode()).strip(
+        b"="
+    )
+    token_unsigned = jwt_header_b64 + b"." + jwt_payload_b64
+
+    # ecdsa_sign produces DER encoded sigs. Parse and extract compact, which `to_p1363()` seems to do
+    sig = ecdsa_sign(privkey, token_unsigned, "sha256")
+    dsa_sig = DSASignature().load(sig)
+    sig_b64 = base64.urlsafe_b64encode(dsa_sig.to_p1363()).strip(b"=")
+
+    token = token_unsigned + b"." + sig_b64
+    return token.decode()
 
 
 def _begin_notarization(api_token, filename: str, file_hash: str):
@@ -153,7 +177,7 @@ def _s3_upload(
             )
         except HTTPError as e:
             print(e.fp.read().decode())
-            raise(e)
+            raise (e)
 
 
 def _wait_submission_status(api_token: str, notarization_id: str):

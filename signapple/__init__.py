@@ -179,6 +179,11 @@ def main():
         help="Only look up and staple the notarization if it exists",
         action="store_true",
     )
+    notarize_subparser.add_argument(
+        "--passphrase",
+        "-p",
+        help="The passphrase protecting the API private key file. If not specified, you will be prompted to enter it later",
+    )
     notarize_subparser.set_defaults(func=notarize)
 
     args = parser.parse_args()
