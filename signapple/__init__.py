@@ -56,6 +56,7 @@ def notarize(args):
         args.file_list,
         args.detach,
         args.staple_only,
+        args.passphrase,
     )
 
 

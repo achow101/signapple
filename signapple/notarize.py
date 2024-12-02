@@ -287,6 +287,7 @@ def _submit_bundle_for_notarization(
     issuer_id: str,
     file_list: Optional[str] = None,
     detach_target: Optional[str] = None,
+    passphrase: Optional[str] = None,
 ):
     # ZIP the bundle
     zipped_bundle = shutil.make_archive(
@@ -300,7 +301,7 @@ def _submit_bundle_for_notarization(
     current_time = datetime.datetime.now().astimezone(datetime.UTC)
 
     # Get App Store Connect API Token
-    api_token = _get_app_store_connect_token(api_privkey_file, issuer_id, current_time)
+    api_token = _get_app_store_connect_token(api_privkey_file, issuer_id, current_time, passphrase)
     # print(api_token)
 
     # Hash the file with SHA256
@@ -339,6 +340,7 @@ def notarize_bundle(
     file_list: Optional[str] = None,
     detach_target: Optional[str] = None,
     staple_only: bool = False,
+    passphrase: Optional[str] = None,
 ):
     # Verify bundle path
     bundle, binpath = get_bundle_exec(bundle_path)
@@ -346,7 +348,7 @@ def notarize_bundle(
 
     if not staple_only:
         _submit_bundle_for_notarization(
-            bundle, binpath, api_privkey_file, issuer_id, file_list, detach_target
+            bundle, binpath, api_privkey_file, issuer_id, file_list, detach_target, passphrase
         )
 
     _staple_notarization(bundle, binpath, file_list, detach_target)
