@@ -18,8 +18,6 @@ If you want to install dependencies manually, the dependencies are:
 * [oscrypto](https://github.com/wbond/oscrypto/) - Cryptographic signature creation and verification
 * [elfesteem](https://github.com/LRGH/elfesteem) - Mach-O binary manipulation.
 * [certvalidator](https://github.com/achow101/certvalidator/tree/allow-more-criticals) - Certificate chain validation. Note that this is a specifically modified version to allow for Apple specific extensions.
-* [PyJWT](https://github.com/jpadilla/pyjwt) - JSON Web Token creation library for generating tokens to communicate with Apple's APIs.
-* [boto3](https://github.com/boto/boto3) - AWS SDK required for submitting apps to be notarized
 
 ## Usage
 
