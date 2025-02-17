@@ -31,7 +31,8 @@ If you want to install dependencies manually, the dependencies are:
 Any paths can be either to the bundle directory or to the binary itself.
 
 The full usage is as follows:
-```
+
+```sh
 $ signapple --help
 usage: signapple [-h] {verify,sign,dump,apply,info,notarize} ...
 
@@ -49,6 +50,9 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+```
+
+```sh
 $ signapple verify --help
 usage: signapple verify [-h] filename
 
@@ -57,6 +61,9 @@ positional arguments:
 
 options:
   -h, --help  show this help message and exit
+```
+
+```sh
 $ signapple sign --help
 usage: signapple sign [-h] [--passphrase PASSPHRASE] [--force] [--file-list FILE_LIST] [--detach DETACH] [--no-verify] [--hardened-runtime] keypath filename
 
@@ -74,6 +81,9 @@ options:
   --detach DETACH       Detach the signature and write it to this path
   --no-verify           Don't verify the signature after creating.
   --hardened-runtime    Enable Hardened Runtime feature for this binary
+```
+
+```sh
 $ signapple dump --help
 usage: signapple dump [-h] [--sigfile] filename
 
@@ -83,6 +93,9 @@ positional arguments:
 options:
   -h, --help  show this help message and exit
   --sigfile   The path is to a detached signature file produced by 'sign --detach' rather than a signed binary
+```
+
+```sh
 $ signapple apply --help
 usage: signapple apply [-h] [--no-verify] filename sig
 
@@ -93,6 +106,9 @@ positional arguments:
 options:
   -h, --help   show this help message and exit
   --no-verify  Don't verify the signature after attaching
+```
+
+```sh
 $ signapple info --help
 usage: signapple info [-h] filename
 
@@ -101,6 +117,9 @@ positional arguments:
 
 options:
   -h, --help  show this help message and exit
+```
+
+```sh
 $ signapple notarize --help
 usage: signapple notarize [-h] [--file-list FILE_LIST] [--detach DETACH] [--staple-only] apikeyfile issuer_id bundle
 
