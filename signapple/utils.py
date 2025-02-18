@@ -90,6 +90,11 @@ def get_bundle_exec(filepath: str) -> Tuple[Optional[str], str]:
         return bundle_dir, filepath
     elif os.path.isdir(filepath):
         # This is a directory. Check it is a bundle and find the binary
+        if not os.path.basename(filepath).endswith(".app"):
+            # Not supposed to be a bundle
+            return None, None
+
+        # Should be a bundle, check structure
         content_dir = os.path.join(filepath, "Contents")
         if not os.path.isdir(content_dir):
             raise Exception(
