@@ -298,7 +298,7 @@ def _submit_bundle_for_notarization(
     )
 
     # Get time
-    current_time = datetime.datetime.now().astimezone(datetime.UTC)
+    current_time = datetime.datetime.now().astimezone(datetime.timezone.utc)
 
     # Get App Store Connect API Token
     api_token = _get_app_store_connect_token(api_privkey_file, issuer_id, current_time, passphrase)
