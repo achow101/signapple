@@ -331,8 +331,8 @@ def _submit_for_notarization(
     _wait_submission_status(api_token, id)
 
 
-def notarize_bundle(
-    bundle_path: str,
+def notarize(
+    path: str,
     api_privkey_file: str,
     issuer_id: str,
     file_list: Optional[str] = None,
@@ -340,13 +340,16 @@ def notarize_bundle(
     staple_only: bool = False,
     passphrase: Optional[str] = None,
 ):
-    # Verify bundle path
-    bundle, binpath = get_bundle_exec(bundle_path)
-    assert bundle is not None
-
     if not staple_only:
         _submit_for_notarization(
-            bundle, api_privkey_file, issuer_id, file_list, detach_target, passphrase
+            path, api_privkey_file, issuer_id, file_list, detach_target, passphrase
         )
 
-    _staple_notarization(bundle, binpath, file_list, detach_target)
+    # Check for bundle
+    bundle, binpath = get_bundle_exec(path)
+
+    # Stapling only works on bundles
+    if bundle is not None:
+        _staple_notarization(bundle, binpath, file_list, detach_target)
+    else:
+        print("Not stapling for non-bundles")
