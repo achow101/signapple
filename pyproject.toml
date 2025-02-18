@@ -6,7 +6,7 @@ authors = ["Andrew Chow <achow101-github@achow101.com>"]
 license = "MIT License"
 
 [tool.poetry.dependencies]
-python = ">=3.9"
+python = ">=3.10"
 asn1crypto = "^1.4.0"
 oscrypto = { git = "https://github.com/wbond/oscrypto.git", rev = "1547f535001ba568b239b8797465536759c742a3" }
 certvalidator = { git = "https://github.com/achow101/certvalidator.git", rev = "e5bdb4bfcaa09fa0af355eb8867d00dfeecba08c" }
