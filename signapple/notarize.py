@@ -280,37 +280,35 @@ def _staple_notarization(
     print("Notarization stapled to bundle")
 
 
-def _submit_bundle_for_notarization(
-    bundle: str,
-    binpath: str,
+def _submit_for_notarization(
+    path: str,
     api_privkey_file: str,
     issuer_id: str,
     file_list: Optional[str] = None,
     detach_target: Optional[str] = None,
     passphrase: Optional[str] = None,
 ):
-    # ZIP the bundle
-    zipped_bundle = shutil.make_archive(
-        bundle,
+    zipped = shutil.make_archive(
+        path,
         "zip",
-        root_dir=os.path.dirname(bundle),
-        base_dir=os.path.basename(bundle),
+        root_dir=os.path.dirname(path),
+        base_dir=os.path.basename(path),
     )
 
     # Get time
     current_time = datetime.datetime.now().astimezone(datetime.timezone.utc)
 
     # Get App Store Connect API Token
-    api_token = _get_app_store_connect_token(api_privkey_file, issuer_id, current_time, passphrase)
+    api_token = _get_app_store_connect_token(
+        api_privkey_file, issuer_id, current_time, passphrase
+    )
     # print(api_token)
 
     # Hash the file with SHA256
-    bundle_hash = hash_file(zipped_bundle, 2).hex()
+    file_hash = hash_file(zipped, 2).hex()
 
     # Begin notarization process
-    id, aws_info = _begin_notarization(
-        api_token, os.path.basename(zipped_bundle), bundle_hash
-    )
+    id, aws_info = _begin_notarization(api_token, os.path.basename(zipped), file_hash)
     bucket = aws_info["bucket"]
     obj = aws_info["object"]
 
@@ -319,13 +317,13 @@ def _submit_bundle_for_notarization(
     # Upload to S3 bucket
     print("Uploading...")
     _s3_upload(
-        zipped_bundle,
+        zipped,
         bucket,
         obj,
         aws_info["awsAccessKeyId"],
         aws_info["awsSecretAccessKey"],
         aws_info["awsSessionToken"],
-        bundle_hash,
+        file_hash,
         current_time,
     )
 
@@ -347,8 +345,8 @@ def notarize_bundle(
     assert bundle is not None
 
     if not staple_only:
-        _submit_bundle_for_notarization(
-            bundle, binpath, api_privkey_file, issuer_id, file_list, detach_target, passphrase
+        _submit_for_notarization(
+            bundle, api_privkey_file, issuer_id, file_list, detach_target, passphrase
         )
 
     _staple_notarization(bundle, binpath, file_list, detach_target)
