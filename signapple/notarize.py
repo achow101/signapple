@@ -288,10 +288,11 @@ def _submit_for_notarization(
     detach_target: Optional[str] = None,
     passphrase: Optional[str] = None,
 ):
+    root_dir = os.path.dirname(path)
     zipped = shutil.make_archive(
         path,
         "zip",
-        root_dir=os.path.dirname(path),
+        root_dir=root_dir if root_dir else None,
         base_dir=os.path.basename(path),
     )
 
