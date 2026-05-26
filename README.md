@@ -136,6 +136,19 @@ options:
   --staple-only         Only look up and staple the notarization if it exists
 ```
 
+### OpenSSL
+
+On Linux, Signapple requires that OpenSSL or LibreSSL. By default, this uses [oscrypto's discovery
+mechanism](https://github.com/wbond/oscrypto/tree/master#dependencies). If that mechanism does not work
+on your platform, the environment variable `SIGNAPPLE_OSCRYPTO_SSL_PATHS=/path/to/libcrypto.so,/path/to/libssl.so`
+can be used to point to the locations of the libraries.
+
+Additionally, `SIGNAPPLE_OSCRYPTO_TRUST_LIST_PATH=/path/to/trust_list.pem` can be used to specify
+the CA certificates in PEM format if `SIGNAPPLE_OSCRYPTO_SSL_PATHS` is being used.
+
+Please see [`oscrypto.use_openssl()`](https://github.com/wbond/oscrypto/blob/master/docs/oscrypto.md#use_openssl-function)
+for more information about the usage of these variables.
+
 ## Signing certificates
 
 In order to sign, you must have a signing certificate.

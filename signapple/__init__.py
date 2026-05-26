@@ -1,5 +1,14 @@
 import argparse
+import oscrypto
+import os
 
+# Setup oscrypto backend to openssl if environment variables are set
+# This must be done before other imports to ensure oscrypto is setup as expected
+SSL_PATHS = os.getenv("SIGNAPPLE_OSCRYPTO_SSL_PATHS")
+TRUST_LIST_PATH = os.getenv("SIGNAPPLE_OSCRYPTO_TRUST_LIST_PATH")
+if SSL_PATHS is not None:
+    libcrypto_path, libssl_path = SSL_PATHS.split(",")
+    oscrypto.use_openssl(libcrypto_path, libssl_path, TRUST_LIST_PATH)
 
 from .dump import dump_mach_o_signature, dump_sigfile, get_binary_info
 from .notarize import notarize
