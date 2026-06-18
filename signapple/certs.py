@@ -48,6 +48,9 @@ APPLE_INTERMEDIATES = [
         os.path.join(os.path.dirname(__file__), "certs/DeveloperIDCA.cer")
     ).asn1,
     load_certificate(
+        os.path.join(os.path.dirname(__file__), "certs/DeveloperIDG2CA.cer")
+    ).asn1,
+    load_certificate(
         os.path.join(
             os.path.dirname(__file__),
             "certs/AppleSoftwareUpdateCertificationAuthority.cer",
