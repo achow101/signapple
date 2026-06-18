@@ -1104,6 +1104,8 @@ def apply_sig(bins_path: str, sigs_path: str) -> SigningStatus:
     """
     bin_code_signers: Dict[str, CodeSigner] = {}
     sig_files = []
+    if not os.path.exists(sigs_path):
+        raise Exception("Signature file not found")
     if os.path.isfile(sigs_path):
         sig_files.append(sigs_path)
     else:
