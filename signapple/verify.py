@@ -1,13 +1,17 @@
+import hashlib
 import io
 import os
 
-from asn1crypto.cms import CMSAttributes, SignedData
+from asn1crypto.cms import CMSAttributes, ContentInfo, SignedData, SignerInfo
+from asn1crypto.core import Void
+from asn1crypto.tsp import TSTInfo
 from asn1crypto.x509 import Certificate
 from certvalidator.context import ValidationContext
 from certvalidator import CertificateValidator
+from datetime import datetime
 from elfesteem.macho import MACHO, LC_CODE_SIGNATURE
 from oscrypto import asymmetric
-from typing import BinaryIO
+from typing import BinaryIO, List, Optional
 
 from .blobs import (
     Blob,
@@ -86,6 +90,89 @@ def _sort_attributes(attrs_in: CMSAttributes) -> CMSAttributes:
     return attrs_out
 
 
+def _get_signed_attr(signed_attrs: CMSAttributes, attr_type: str):
+    for attr in signed_attrs:
+        if attr["type"].native == attr_type:
+            return attr["values"][0]
+    raise Exception(f"{attr_type} not found in signature")
+
+
+def _get_signer_cert(certs: List[Certificate], signer_info: SignerInfo) -> Certificate:
+    sid = signer_info["sid"]
+    assert sid.name == "issuer_and_serial_number"
+    for cert in certs:
+        if (
+            cert.issuer == sid.chosen["issuer"]
+            and cert.serial_number == sid.chosen["serial_number"].native
+        ):
+            return cert
+    raise Exception("Signer certificate not found in signature")
+
+
+def _validate_timestamp(signer_info: SignerInfo) -> Optional[datetime]:
+    """
+    Verify the RFC 3161 timestamp countersignature, if there is one, and return
+    the time it attests to. Returns None if the signature is not timestamped.
+    """
+    tokens = []
+    unsigned_attrs = signer_info["unsigned_attrs"]
+    if not isinstance(unsigned_attrs, Void):
+        for attr in unsigned_attrs:
+            if attr["type"].native == "signature_time_stamp_token":
+                tokens.extend(attr["values"])
+    if len(tokens) == 0:
+        return None
+    if len(tokens) > 1:
+        raise Exception("Multiple timestamps in signature")
+    token = tokens[0]
+    assert isinstance(token, ContentInfo)
+    tst_data = token["content"]
+    assert isinstance(tst_data, SignedData)
+    assert len(tst_data["signer_infos"]) == 1
+    tsa_info = tst_data["signer_infos"][0]
+
+    encap = tst_data["encap_content_info"]
+    if encap["content_type"].native != "tst_info":
+        raise Exception("Timestamp does not contain a TSTInfo")
+    tst_info = encap["content"].parsed
+    assert isinstance(tst_info, TSTInfo)
+    timestamp = tst_info["gen_time"].native
+
+    # The timestamp must be over the signature it countersigns
+    imprint = tst_info["message_imprint"]
+    imprint_alg = imprint["hash_algorithm"]["algorithm"].native
+    sig_hash = hashlib.new(imprint_alg, signer_info["signature"].native).digest()
+    if imprint["hashed_message"].native != sig_hash:
+        raise Exception("Timestamp does not match the signature")
+
+    # The TSA signs its attributes, which must contain the hash of the TSTInfo
+    digest_alg = tsa_info["digest_algorithm"]["algorithm"].native
+    signed_attrs = tsa_info["signed_attrs"]
+    message_digest = _get_signed_attr(signed_attrs, "message_digest").native
+    if message_digest != hashlib.new(digest_alg, encap["content"].contents).digest():
+        raise Exception("Timestamp hash mismatch")
+
+    # Validate the TSA's certificate chain as of the time of the timestamp
+    tsa_certs = [cert.chosen for cert in tst_data["certificates"]]
+    tsa_cert = _get_signer_cert(tsa_certs, tsa_info)
+    validation_context = ValidationContext(
+        trust_roots=APPLE_ROOTS,
+        allow_fetching=False,
+        moment=timestamp,
+    )
+    validator = CertificateValidator(tsa_cert, tsa_certs, validation_context)
+    validator.validate_usage({"digital_signature"}, {"time_stamping"})
+
+    # Check the TSA's signature
+    pubkey = asymmetric.load_public_key(tsa_cert.public_key)
+    signed_msg = _sort_attributes(signed_attrs).dump()
+    asymmetric.rsa_pkcs1v15_verify(
+        pubkey, tsa_info["signature"].native, signed_msg, digest_alg
+    )
+
+    return timestamp
+
+
 def _validate_cms_signature(sig_blob: SignatureBlob, cd_hash: bytes):
     assert sig_blob.cms
     signed_data = sig_blob.cms["content"]
@@ -120,10 +207,16 @@ def _validate_cms_signature(sig_blob: SignatureBlob, cd_hash: bytes):
     if message_digest is None:
         raise Exception("message_digest not found in signature")
 
+    # Verify the timestamp. The certificate chain is then validated as of the
+    # time of signing, so that the signature stays valid after the signing
+    # certificate expires.
+    timestamp = _validate_timestamp(signer_info)
+
     # Validate the certificate chain
     validation_context = ValidationContext(
         trust_roots=APPLE_ROOTS,
         allow_fetching=False,
+        moment=timestamp,
         additional_critical_extensions=APPLE_CERT_CRIT_EXTS,
     )
     validator = CertificateValidator(
